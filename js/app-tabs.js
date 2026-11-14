@@ -3,12 +3,17 @@
   const AT = window.AT, App = AT.app, B = AT.backtest, ST = AT.strategies, D = AT.data;
   const state = App.state;
   const $ = function (id) { return document.getElementById(id); };
+  const CFG = window.AT_CONFIG || {};
 
   function pct(x) { return (x * 100).toFixed(0) + '%'; }
   function pf(x) { return !isFinite(x) ? '∞' : x.toFixed(2); }
   function cls(x) { return x > 0 ? 'buy' : x < 0 ? 'sell' : ''; }
-  function stName(id) { return id === 'manual' ? 'Manual' : (ST.byId[id] ? ST.byId[id].name.split(' (')[0] : id); }
   function usd(x) { return (x < 0 ? '-$' : '+$') + Math.abs(x).toFixed(2); }
+
+  function stName(id) {
+    if (id === 'manual') return 'Manual';
+    return ST.byId[id] ? ST.byId[id].name.split(' (')[0] : id;
+  }
 
   App.setTab = function (name) {
     state.tab = name;
@@ -25,6 +30,7 @@
     else if (name === 'backtest') App.runBacktest();
     else if (name === 'journal') App.renderJournal();
     else if (name === 'settings') App.renderSettings();
+    App.renderRisk();
   };
 
   App.wireTabs = function () {
@@ -45,7 +51,10 @@
 
   function renderOpenList() {
     const open = state.journal.openTrades(), box = $('jOpen');
-    if (!open.length) { box.innerHTML = '<div class="empty">No hay operaciones abiertas.</div>'; return; }
+    if (!open.length) {
+      box.innerHTML = '<div class="empty">No hay operaciones abiertas.</div>';
+      return;
+    }
     box.innerHTML = open.map(function (tr) {
       return '<div class="item" data-id="' + tr.id + '">' +
         '<div><b>' + tr.symbol + '</b> ' + (tr.dir === 1 ? 'Compra' : 'Venta') + ' @ ' + App.fmt(tr.symbol, tr.entry) +
@@ -63,7 +72,8 @@
     open.forEach(function (tr) {
       const row = $('jOpen').querySelector('.item[data-id="' + tr.id + '"] .fl');
       if (!row) return;
-      const t = state.ticks[tr.symbol], px = t ? (tr.dir === 1 ? t.bid : t.ask) : null;
+      const t = state.ticks[tr.symbol];
+      const px = t ? (tr.dir === 1 ? t.bid : t.ask) : null;
       const r = px != null && tr.risk > 0 ? tr.dir * (px - tr.entry) / tr.risk : null;
       row.textContent = r == null ? '—' : App.sgn(r, 2) + ' R';
       row.className = 'fl ' + (r == null ? '' : cls(r));
@@ -75,7 +85,11 @@
     $('jAuto').checked = !!s.auto;
     $('jStrategy').value = s.journalStrategy;
     $('jTf').value = s.journalTf;
-    const cell = function (k, v, c) { return '<div><span>' + k + '</span><b class="' + (c || '') + '">' + v + '</b></div>'; };
+
+    const cell = function (k, v, c) {
+      return '<div><span>' + k + '</span><b class="' + (c || '') + '">' + v + '</b></div>';
+    };
+
     $('jStats').innerHTML =
       cell('Cerradas', st.n) +
       cell('Acierto', st.n ? pct(st.winRate) : '—') +
@@ -83,6 +97,7 @@
       cell('Esperanza', st.n ? App.sgn(st.expectancy, 2) + ' R' : '—', cls(st.expectancy)) +
       cell('Neto', App.sgn(st.netR, 1) + ' R', cls(st.netR)) +
       cell('Neto en USD', usd(st.usd), cls(st.usd));
+
     renderOpenList();
     App.renderJournalLive();
 
@@ -128,9 +143,8 @@
     L.push('Cerradas: ' + st.n + ' · acierto ' + pct(st.winRate) + ' · factor de beneficio ' + pf(st.pf) +
       ' · esperanza ' + App.sgn(st.expectancy, 2) + ' R · neto ' + App.sgn(st.netR, 1) + ' R (' + usd(st.usd) +
       ') · caída máx. ' + st.maxDD.toFixed(1) + ' R · abiertas ' + st.open);
-    L.push('Ajustes: saldo $' + s.balance + ' · riesgo ' + s.riskPct + '% · estrategia del diario ' +
-      stName(s.journalStrategy) + ' ' + s.journalTf + ' · spread ' +
-      App.SYMS.map(function (sym) { return sym.slice(0, 3) + ' ' + s.spread[sym]; }).join(' / '));
+    L.push('Ajustes: saldo $' + s.balance + ' · riesgo ' + s.riskPct + '% · agregado ' + s.maxAggPct +
+      '% · estrategia ' + stName(s.journalStrategy) + ' ' + s.journalTf);
     const groups = {};
     state.journal.all().forEach(function (t) {
       if (t.status === 'closed') {
@@ -160,7 +174,7 @@
       const tf = state.settings.journalTf;
       App.SYMS.forEach(function (s) {
         if (state.bars[s][tf]) App.primeSeen(s, false);
-        else App.load(s, tf, 500).catch(function () { /* el estado ya avisa */ });
+        else App.load(s, tf, 500).catch(function () {});
       });
     }
     $('jStrategy').addEventListener('change', changed);
@@ -173,6 +187,7 @@
       if (!tr || !t) { App.toast('Sin precio para cerrar todavía'); return; }
       J.closeManual(tr.id, tr.dir === 1 ? t.bid : t.ask);
       App.renderJournal();
+      App.renderRisk();
     });
     $('jCopy').addEventListener('click', function () { App.copy(App.summaryText()); });
     $('jCsv').addEventListener('click', function () {
@@ -189,6 +204,7 @@
       J.clear();
       App.SYMS.forEach(function (s) { App.primeSeen(s, true); });
       App.renderJournal();
+      App.renderRisk();
     });
   };
 
@@ -211,9 +227,33 @@
     const s = state.settings;
     $('sBalance').value = s.balance;
     $('sRisk').value = s.riskPct;
+    $('sMaxAgg').value = s.maxAggPct;
+    $('sMaxFam').value = s.maxTradesPerFamily;
     $('sSl').value = s.sl == null ? '' : s.sl;
     $('sTp').value = s.tp == null ? '' : s.tp;
-    App.SYMS.forEach(function (sym) { $('sSpread' + sym).value = s.spread[sym]; });
+    $('sSessionFilter').checked = !!s.sessionFilter;
+    $('sNewsFilter').checked = !!s.newsFilter;
+    $('sTrailing').checked = !!s.trailing;
+    $('sAdxFilter').checked = !!s.adxFilter;
+
+    const grid = $('spreadGrid');
+    grid.innerHTML = App.SYMS.map(function (sym) {
+      const lbl = B.SYMBOLS[sym].name + ' (' + sym + ')';
+      return '<label>' + App.esc(lbl) + '<input id="sSpread' + sym + '" type="number" min="0" step="0.00001" inputmode="decimal" value="' + s.spread[sym] + '"></label>';
+    }).join('');
+    App.SYMS.forEach(function (sym) {
+      const el = $('sSpread' + sym);
+      if (el) {
+        el.addEventListener('change', function () {
+          const v = parseFloat(el.value);
+          if (isFinite(v) && v >= 0) {
+            state.settings.spread[sym] = v;
+            App.saveSettings();
+          }
+        });
+      }
+    });
+
     App.renderStatus();
     App.renderSymbolStatus();
   };
@@ -243,7 +283,7 @@
     return window.fetch(D.base() + path, { cache: 'no-store' }).then(function (r) {
       return r.text().then(function (txt) {
         let j = null;
-        try { j = JSON.parse(txt); } catch (e) { /* no era JSON */ }
+        try { j = JSON.parse(txt); } catch (e) {}
         return { status: r.status, ms: Date.now() - t0, json: j, text: txt };
       });
     }, function (e) { return { error: (e && e.message) || 'error de red', ms: Date.now() - t0 }; });
@@ -287,32 +327,54 @@
       App.diagnose(function (s) { lines.push(s); pre.textContent = lines.join('\n'); }).then(done, done);
     });
     $('sDiagCopy').addEventListener('click', function () { App.copy($('sDiag').textContent); });
+
     function num(id, min, max) {
       const v = parseFloat($(id).value);
       return isFinite(v) && v >= min && v <= max ? v : null;
     }
+
     function on(id, fn) {
       $(id).addEventListener('change', function () {
         fn();
         App.saveSettings();
         App.renderSettings();
+        App.renderRisk();
       });
     }
+
     on('sBalance', function () { const v = num('sBalance', 100, 1e9); if (v) state.settings.balance = v; });
-    on('sRisk', function () { const v = num('sRisk', 0.1, 10); if (v) state.settings.riskPct = v; });
+    on('sRisk', function () { const v = num('sRisk', 0.1, 5); if (v) state.settings.riskPct = v; });
+    on('sMaxAgg', function () { const v = num('sMaxAgg', 0.5, 10); if (v) state.settings.maxAggPct = v; });
+    on('sMaxFam', function () {
+      const v = parseInt($('sMaxFam').value, 10);
+      if (isFinite(v) && v >= 1 && v <= 5) state.settings.maxTradesPerFamily = v;
+    });
     on('sSl', function () { state.settings.sl = num('sSl', 0.5, 10); });
     on('sTp', function () { state.settings.tp = num('sTp', 0.5, 20); });
-    App.SYMS.forEach(function (sym) {
-      on('sSpread' + sym, function () {
-        const v = num('sSpread' + sym, 0, 1e6);
-        if (v !== null) state.settings.spread[sym] = v;
-      });
+
+    $('sSessionFilter').addEventListener('change', function () {
+      state.settings.sessionFilter = $('sSessionFilter').checked;
+      App.saveSettings();
     });
+    $('sNewsFilter').addEventListener('change', function () {
+      state.settings.newsFilter = $('sNewsFilter').checked;
+      App.saveSettings();
+    });
+    $('sTrailing').addEventListener('change', function () {
+      state.settings.trailing = $('sTrailing').checked;
+      App.saveSettings();
+    });
+    $('sAdxFilter').addEventListener('change', function () {
+      state.settings.adxFilter = $('sAdxFilter').checked;
+      App.saveSettings();
+    });
+
     $('sReset').addEventListener('click', function () {
       if (!confirm('¿Restablecer los ajustes a los valores iniciales?')) return;
       Object.assign(state.settings, App.defaults());
       App.saveSettings();
       App.renderSettings();
+      App.renderRisk();
     });
   };
 })();

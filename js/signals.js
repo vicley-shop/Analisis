@@ -18,119 +18,137 @@
 
   function compute(bars) {
     const k = cols(bars), h = k.h, l = k.l, c = k.c;
-    const ind = { k: k, maList: [], x: {} };
-    [10, 20, 30, 50, 100, 200].forEach(function (p) {
-      ind.maList.push({ name: 'EMA ' + p, arr: I.ema(c, p) });
-      ind.maList.push({ name: 'SMA ' + p, arr: I.sma(c, p) });
-    });
-    ind.maList.push({ name: 'Ichimoku base (26)', arr: I.ichimoku(h, l).kijun });
-    ind.maList.push({ name: 'VWMA (20)', arr: I.vwma(c, k.v, 20) });
-    ind.maList.push({ name: 'Hull MA (9)', arr: I.hma(c, 9) });
+    const ind = { k: k, x: {} };
+    ind.ema50 = I.ema(c, 50);
+    ind.ema200 = I.ema(c, 200);
+    ind.kijun = I.ichimoku(h, l).kijun;
+    ind.vwma = I.vwma(c, k.v, 20);
     ind.rsi = I.rsi(c, 14);
-    ind.stoch = I.stoch(h, l, c, 14, 3, 3);
-    ind.cci = I.cci(h, l, c, 20);
-    ind.adx = I.adx(h, l, c, 14);
-    ind.ao = I.ao(h, l);
-    ind.mom = I.momentum(c, 10);
     ind.macd = I.macd(c, 12, 26, 9);
-    ind.srsi = I.stochRsi(c, 14, 14, 3, 3);
-    ind.wr = I.williamsR(h, l, c, 14);
-    ind.bb = I.bullBear(h, l, c, 13);
-    ind.uo = I.uo(h, l, c);
+    ind.stoch = I.stoch(h, l, c, 14, 3, 3);
+    ind.adx = I.adx(h, l, c, 14);
     ind.atr = I.atr(h, l, c, 14);
     return ind;
   }
 
-  function maVotes(ind, i) {
-    const price = ind.k.c[i], out = [];
-    ind.maList.forEach(function (m) {
-      const v = m.arr[i];
-      if (v == null) return;
-      out.push({ name: m.name, value: v, action: price > v ? BUY : price < v ? SELL : NEUTRAL });
-    });
+  function num(v) { return v != null && isFinite(v); }
+
+  function trendVotes(ind, i) {
+    const out = [];
+    const price = ind.k.c[i];
+
+    function add(name, value, action, weight) {
+      out.push({ name: name, value: value, action: action, weight: weight });
+    }
+
+    if (num(ind.ema50[i]) && num(ind.ema200[i])) {
+      const above50 = price > ind.ema50[i];
+      const above200 = price > ind.ema200[i];
+      const trendUp = ind.ema50[i] > ind.ema200[i];
+      let action = NEUTRAL;
+      if (above50 && above200 && trendUp) action = BUY;
+      else if (!above50 && !above200 && !trendUp) action = SELL;
+      add('EMA 50/200', ind.ema50[i], action, 1.5);
+    }
+
+    if (num(ind.kijun[i])) {
+      add('Ichimoku Kijun', ind.kijun[i], price > ind.kijun[i] ? BUY : price < ind.kijun[i] ? SELL : NEUTRAL, 1);
+    }
+
+    if (num(ind.vwma[i])) {
+      add('VWMA (20)', ind.vwma[i], price > ind.vwma[i] ? BUY : price < ind.vwma[i] ? SELL : NEUTRAL, 0.5);
+    }
+
     return out;
   }
 
-  function ok() {
-    for (let a = 0; a < arguments.length; a++) if (arguments[a] == null) return false;
-    return true;
-  }
+  function momentumVotes(ind, i) {
+    const out = [];
+    const p = i - 1;
+    if (p < 0) return out;
 
-  function oscVotes(ind, i) {
-    const out = [], p = i - 1;
-    function add(name, value, action) { out.push({ name: name, value: value, action: action }); }
-    let a, b;
-
-    a = ind.rsi[i]; b = ind.rsi[p];
-    if (ok(a, b)) add('RSI (14)', a, (a < 30 && a > b) ? BUY : (a > 70 && a < b) ? SELL : NEUTRAL);
-
-    const k = ind.stoch.k[i], d = ind.stoch.d[i];
-    if (ok(k, d)) add('Estocástico %K (14,3,3)', k, (k < 20 && d < 20 && k > d) ? BUY : (k > 80 && d > 80 && k < d) ? SELL : NEUTRAL);
-
-    a = ind.cci[i]; b = ind.cci[p];
-    if (ok(a, b)) add('CCI (20)', a, (a < -100 && a > b) ? BUY : (a > 100 && a < b) ? SELL : NEUTRAL);
-
-    const ax = ind.adx.adx[i], pd = ind.adx.pdi[i], md = ind.adx.mdi[i];
-    if (ok(ax, pd, md)) add('ADX (14)', ax, ax > 20 ? (pd > md ? BUY : pd < md ? SELL : NEUTRAL) : NEUTRAL);
-
-    a = ind.ao[i]; b = ind.ao[p];
-    if (ok(a, b)) add('Awesome Oscillator', a, (a > 0 && a > b) ? BUY : (a < 0 && a < b) ? SELL : NEUTRAL);
-
-    a = ind.mom[i]; b = ind.mom[p];
-    if (ok(a, b)) add('Momentum (10)', a, a > b ? BUY : a < b ? SELL : NEUTRAL);
-
-    a = ind.macd.macd[i]; b = ind.macd.signal[i];
-    if (ok(a, b)) add('MACD (12,26,9)', a, a > b ? BUY : a < b ? SELL : NEUTRAL);
-
-    const sk = ind.srsi.k[i], sd = ind.srsi.d[i];
-    if (ok(sk, sd)) add('Stoch RSI (14,14,3,3)', sk, (sk < 20 && sd < 20 && sk > sd) ? BUY : (sk > 80 && sd > 80 && sk < sd) ? SELL : NEUTRAL);
-
-    a = ind.wr[i]; b = ind.wr[p];
-    if (ok(a, b)) add('Williams %R (14)', a, (a < -80 && a > b) ? BUY : (a > -20 && a < b) ? SELL : NEUTRAL);
-
-    const bu = ind.bb.bull[i], be = ind.bb.bear[i], e0 = ind.bb.ema[i], e1 = ind.bb.ema[p];
-    const bu1 = ind.bb.bull[p], be1 = ind.bb.bear[p];
-    if (ok(bu, be, e0, e1, bu1, be1)) {
-      add('Bull/Bear Power (13)', bu + be,
-        (e0 > e1 && be < 0 && be > be1) ? BUY : (e0 < e1 && bu > 0 && bu < bu1) ? SELL : NEUTRAL);
+    function add(name, value, action, weight) {
+      out.push({ name: name, value: value, action: action, weight: weight });
     }
 
-    a = ind.uo[i];
-    if (ok(a)) add('Ultimate Oscillator', a, a > 70 ? BUY : a < 30 ? SELL : NEUTRAL);
+    if (num(ind.rsi[i]) && num(ind.rsi[p])) {
+      const r = ind.rsi[i], rp = ind.rsi[p];
+      let action = NEUTRAL;
+      if (r < 30 && r > rp) action = BUY;
+      else if (r > 70 && r < rp) action = SELL;
+      else if (r >= 50 && r > rp) action = BUY;
+      else if (r < 50 && r < rp) action = SELL;
+      add('RSI (14)', r, action, 1);
+    }
+
+    if (num(ind.macd.macd[i]) && num(ind.macd.signal[i])) {
+      const m = ind.macd.macd[i], s = ind.macd.signal[i];
+      add('MACD (12,26,9)', m, m > s ? BUY : m < s ? SELL : NEUTRAL, 1.5);
+    }
+
+    if (num(ind.stoch.k[i]) && num(ind.stoch.d[i])) {
+      const k = ind.stoch.k[i], d = ind.stoch.d[i];
+      let action = NEUTRAL;
+      if (k < 20 && d < 20 && k > d) action = BUY;
+      else if (k > 80 && d > 80 && k < d) action = SELL;
+      add('Stochastic (14,3,3)', k, action, 1);
+    }
+
+    if (num(ind.adx.adx[i]) && num(ind.adx.pdi[i]) && num(ind.adx.mdi[i])) {
+      const a = ind.adx.adx[i], pd = ind.adx.pdi[i], md = ind.adx.mdi[i];
+      let action = NEUTRAL;
+      if (a >= 20) action = pd > md ? BUY : pd < md ? SELL : NEUTRAL;
+      add('ADX (14)', a, action, 0.5);
+    }
+
     return out;
   }
 
   function tally(votes) {
-    let b = 0, s = 0, z = 0;
-    votes.forEach(function (v) { if (v.action === BUY) b++; else if (v.action === SELL) s++; else z++; });
-    const total = b + s + z;
-    return { buy: b, sell: s, neutral: z, total: total, score: total ? (b - s) / total : 0 };
+    let b = 0, s = 0, z = 0, wb = 0, ws = 0, wz = 0;
+    votes.forEach(function (v) {
+      const w = v.weight != null ? v.weight : 1;
+      if (v.action === BUY) { b++; wb += w; }
+      else if (v.action === SELL) { s++; ws += w; }
+      else { z++; wz += w; }
+    });
+    const total = wb + ws + wz;
+    return {
+      buy: b, sell: s, neutral: z,
+      total: votes.length,
+      wBuy: wb, wSell: ws, wNeutral: wz,
+      score: total > 0 ? (wb - ws) / total : 0
+    };
   }
 
   function label(score) {
+    if (!isFinite(score)) score = 0;
     if (score >= 0.5) return { key: 'strong_buy', text: 'Compra fuerte', dir: 1 };
-    if (score >= 0.1) return { key: 'buy', text: 'Compra', dir: 1 };
-    if (score > -0.1) return { key: 'neutral', text: 'Neutral', dir: 0 };
+    if (score >= 0.15) return { key: 'buy', text: 'Compra', dir: 1 };
+    if (score > -0.15) return { key: 'neutral', text: 'Neutral', dir: 0 };
     if (score > -0.5) return { key: 'sell', text: 'Venta', dir: -1 };
     return { key: 'strong_sell', text: 'Venta fuerte', dir: -1 };
   }
 
   function summaryAt(ind, i) {
-    const m = maVotes(ind, i), o = oscVotes(ind, i);
-    const tm = tally(m), to = tally(o), all = tally(m.concat(o));
+    const m = trendVotes(ind, i), o = momentumVotes(ind, i);
+    const tm = tally(m), to = tally(o);
+    const all = tally(m.concat(o));
     let score = 0;
-    if (tm.total && to.total) score = (tm.score + to.score) / 2;
-    else if (tm.total) score = tm.score;
-    else if (to.total) score = to.score;
+    if (m.length && o.length) score = (tm.score + to.score) / 2;
+    else if (m.length) score = tm.score;
+    else if (o.length) score = to.score;
     return {
-      score: score, label: label(score),
-      ma: { votes: m, t: tm, label: label(tm.score) },
-      osc: { votes: o, t: to, label: label(to.score) },
+      score: score,
+      label: label(score),
+      trend: { votes: m, t: tm, label: label(tm.score) },
+      momentum: { votes: o, t: to, label: label(to.score) },
       counts: { buy: all.buy, sell: all.sell, neutral: all.neutral }
     };
   }
 
   function analyze(bars) {
+    if (!bars || bars.length < 30) return null;
     const ind = compute(bars), i = bars.length - 1;
     const s = summaryAt(ind, i);
     s.ind = ind;
@@ -147,9 +165,20 @@
     return out;
   }
 
+  function inSession(t, startGmt, endGmt) {
+    const h = new Date(t).getUTCHours();
+    if (startGmt <= endGmt) return h >= startGmt && h < endGmt;
+    return h >= startGmt || h < endGmt;
+  }
+
   return {
     BUY: BUY, SELL: SELL, NEUTRAL: NEUTRAL,
-    compute: compute, summaryAt: summaryAt, analyze: analyze, ratingSeries: ratingSeries,
-    label: label, tally: tally
+    compute: compute,
+    summaryAt: summaryAt,
+    analyze: analyze,
+    ratingSeries: ratingSeries,
+    label: label,
+    tally: tally,
+    inSession: inSession
   };
 }));

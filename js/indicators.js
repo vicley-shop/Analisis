@@ -40,7 +40,6 @@
   }
 
   function ema(v, p) { return smooth(v, p, 2 / (p + 1)); }
-
   function rma(v, p) { return smooth(v, p, 1 / p); }
 
   function wma(v, p) {
@@ -59,7 +58,9 @@
     const half = Math.max(1, Math.round(p / 2));
     const sq = Math.max(1, Math.round(Math.sqrt(p)));
     const a = wma(v, half), b = wma(v, p);
-    const diff = v.map(function (_, i) { return (a[i] == null || b[i] == null) ? null : 2 * a[i] - b[i]; });
+    const diff = v.map(function (_, i) {
+      return (a[i] == null || b[i] == null) ? null : 2 * a[i] - b[i];
+    });
     return wma(diff, sq);
   }
 
@@ -115,9 +116,13 @@
   function macd(c, f, s, g) {
     f = f || 12; s = s || 26; g = g || 9;
     const ef = ema(c, f), es = ema(c, s);
-    const line = c.map(function (_, i) { return (ef[i] == null || es[i] == null) ? null : ef[i] - es[i]; });
+    const line = c.map(function (_, i) {
+      return (ef[i] == null || es[i] == null) ? null : ef[i] - es[i];
+    });
     const sig = ema(line, g);
-    const hist = line.map(function (x, i) { return (x == null || sig[i] == null) ? null : x - sig[i]; });
+    const hist = line.map(function (x, i) {
+      return (x == null || sig[i] == null) ? null : x - sig[i];
+    });
     return { macd: line, signal: sig, hist: hist };
   }
 
@@ -189,15 +194,6 @@
     }
     for (let i = 28; i < n; i++) out[i] = 100 * (4 * avg(i, 7) + 2 * avg(i, 14) + avg(i, 28)) / 7;
     return out;
-  }
-
-  function bullBear(h, l, c, p) {
-    const e = ema(c, p || 13);
-    return {
-      ema: e,
-      bull: h.map(function (x, i) { return e[i] == null ? null : x - e[i]; }),
-      bear: l.map(function (x, i) { return e[i] == null ? null : x - e[i]; })
-    };
   }
 
   function tr(h, l, c) {
@@ -276,11 +272,30 @@
   }
 
   return {
-    nulls: nulls, last: last,
-    sma: sma, ema: ema, rma: rma, wma: wma, hma: hma, vwma: vwma,
-    highest: highest, lowest: lowest,
-    rsi: rsi, macd: macd, stoch: stoch, stochRsi: stochRsi, cci: cci,
-    williamsR: williamsR, momentum: momentum, ao: ao, uo: uo, bullBear: bullBear,
-    tr: tr, atr: atr, adx: adx, bollinger: bollinger, ichimoku: ichimoku, supertrend: supertrend
+    nulls: nulls,
+    last: last,
+    sma: sma,
+    ema: ema,
+    rma: rma,
+    wma: wma,
+    hma: hma,
+    vwma: vwma,
+    highest: highest,
+    lowest: lowest,
+    rsi: rsi,
+    macd: macd,
+    stoch: stoch,
+    stochRsi: stochRsi,
+    cci: cci,
+    williamsR: williamsR,
+    momentum: momentum,
+    ao: ao,
+    uo: uo,
+    tr: tr,
+    atr: atr,
+    adx: adx,
+    bollinger: bollinger,
+    ichimoku: ichimoku,
+    supertrend: supertrend
   };
 }));

@@ -5,13 +5,6 @@
   const $ = function (id) { return document.getElementById(id); };
   const LABEL = { strong_buy: 'Compra fuerte', buy: 'Compra', neutral: 'Neutral', sell: 'Venta', strong_sell: 'Venta fuerte' };
 
-  const SIGNAL_PARAMS = {
-    XAUUSD: { sl: 1.5, tp: 2.5, bestTf: '1h', session: 'Londres/NY (13:00–17:00 GMT)' },
-    XAGUSD: { sl: 1.5, tp: 2.0, bestTf: '4h', session: 'Londres/NY (13:00–17:00 GMT)' },
-    EURUSD: { sl: 1.5, tp: 1.5, bestTf: '1h', session: 'Londres/NY (13:00–17:00 GMT)' },
-    BTCUSD: { sl: 2.0, tp: 3.0, bestTf: '4h', session: 'Londres/NY (13:00–17:00 GMT)' }
-  };
-
   let chart = null, renders = 0, tablesKey = '';
 
   App.copy = function (text) {
@@ -73,7 +66,9 @@
       const b = e.target.closest('button[data-dir]');
       if (!b) return;
       state.planDir = +b.dataset.dir;
-      Array.prototype.forEach.call($('planDir').children, function (x) { x.classList.toggle('active', x === b); });
+      Array.prototype.forEach.call($('planDir').children, function (x) {
+        x.classList.toggle('active', x === b);
+      });
       App.renderPlan();
       App.renderChart();
     });
@@ -81,20 +76,31 @@
     $('planCopy').addEventListener('click', function () {
       const p = App.planFor(state.symbol, state.tf, state.planDir);
       if (!p || p.neutral) return;
-      App.copy((p.dir === 1 ? 'COMPRA ' : 'VENTA ') + p.symbol + ' (' + p.tf + ') · entrada ' + App.fmt(p.symbol, p.entry) +
-        ' · SL ' + App.fmt(p.symbol, p.sl) + ' · TP ' + App.fmt(p.symbol, p.tp) + ' · R:R ' + p.rr.toFixed(2) +
+      App.copy((p.dir === 1 ? 'COMPRA ' : 'VENTA ') + p.symbol + ' (' + p.tf + ') · entrada ' +
+        App.fmt(p.symbol, p.entry) + ' · SL ' + App.fmt(p.symbol, p.sl) +
+        ' · TP ' + App.fmt(p.symbol, p.tp) + ' · R:R ' + p.rr.toFixed(2) +
         ' · lotes ' + p.lots.toFixed(2) + ' (riesgo $' + p.riskUsd.toFixed(0) + ')');
     });
 
     $('planLog').addEventListener('click', function () {
       const p = App.planFor(state.symbol, state.tf, state.planDir);
       if (!p || p.neutral) return;
+      const check = App.canOpenNow(p.symbol, p.riskUsd);
+      if (!check.ok) { App.toast('No se puede abrir: ' + check.reason); return; }
       state.journal.open({
-        symbol: p.symbol, tf: p.tf, strategy: 'manual', dir: p.dir,
-        entry: p.entry, sl: p.sl, tp: p.tp, lots: p.lots,
-        source: 'manual', note: 'Plan manual (medidor ' + p.tf + ')'
+        symbol: p.symbol,
+        tf: p.tf,
+        strategy: 'manual',
+        dir: p.dir,
+        entry: p.entry,
+        sl: p.sl,
+        tp: p.tp,
+        lots: p.lots,
+        source: 'manual',
+        note: 'Plan manual (medidor ' + p.tf + ')'
       });
       App.toast('Registrado en el diario');
+      if (App.renderRisk) App.renderRisk();
     });
 
     $('calcSignal').addEventListener('click', App.calculateSignal);
@@ -106,15 +112,14 @@
   };
 
   App.calculateSignal = function () {
-    const sym = state.symbol;
-    const tf = state.tf;
-    const params = SIGNAL_PARAMS[sym];
-    const box = $('signalBox');
-    const copyBtn = $('copySignal');
+    const sym = state.symbol, tf = state.tf;
+    const box = $('signalBox'), copyBtn = $('copySignal');
+    const st = state.settings;
+    const symCfg = B.SYMBOLS[sym];
 
     const bars = state.bars[sym][tf] || [];
     if (bars.length < 60) {
-      box.innerHTML = '<div class="msg">Faltan velas para calcular la señal. Espera a que cargue el historial.</div>';
+      box.innerHTML = '<div class="msg warn">Cargando historial… (' + bars.length + '/60 velas). Espera unos segundos y vuelve a pulsar.</div>';
       copyBtn.disabled = true;
       state.lastSignal = null;
       return;
@@ -123,73 +128,92 @@
     const closed = bars.slice(0, -1);
     const a = AT.signals.analyze(closed);
     if (!a || a.atr == null) {
-      box.innerHTML = '<div class="msg">No hay datos suficientes para calcular la señal.</div>';
+      box.innerHTML = '<div class="msg warn">ATR no disponible todavía.</div>';
       copyBtn.disabled = true;
       state.lastSignal = null;
       return;
     }
 
-    const dir = a.label.dir;
+    const slMult = st.sl != null ? st.sl : (symCfg.defaultSl || 1.5);
+    const tpMult = st.tp != null ? st.tp : (symCfg.defaultTp || 2.5);
+
+    let dir = a.label.dir;
+    let forced = false;
     if (dir === 0) {
-      box.innerHTML = '<div class="msg">El medidor está en Neutral. No hay señal clara que programar. Espera a que salga de la zona neutral.</div>';
-      copyBtn.disabled = true;
-      state.lastSignal = null;
-      return;
+      if (state.planDir !== 0) {
+        dir = state.planDir;
+        forced = true;
+      } else {
+        box.innerHTML = '<div class="msg warn">El medidor está en <b>Neutral</b> (score ' +
+          a.score.toFixed(2) + '). Usa los botones «Comprar» o «Vender» del plan de operación ' +
+          'para forzar una señal, o espera a que salga de la zona neutral.</div>';
+        copyBtn.disabled = true;
+        state.lastSignal = null;
+        return;
+      }
+    }
+
+    if (st.sessionFilter && !App.sessionInfo().open && !forced) {
+      box.innerHTML = '<div class="msg warn">Fuera de sesión Londres/NY (' +
+        App.sessionInfo().startGmt + ':00–' + App.sessionInfo().endGmt + ':00 GMT). ' +
+        'La señal se calcula, pero el filtro de sesión está activo. Puedes forzar la dirección para ignorarlo.</div>';
     }
 
     const tick = state.ticks[sym];
     const lastClosed = closed[closed.length - 1];
     const entry = tick ? (dir === 1 ? tick.ask : tick.bid) : lastClosed.c;
-    const risk = params.sl * a.atr;
-    const reward = params.tp * a.atr;
+    const risk = slMult * a.atr;
+    const reward = tpMult * a.atr;
     const sl = entry - dir * risk;
     const tp = entry + dir * reward;
     const rr = reward / risk;
-    const riskUsd = state.settings.balance * state.settings.riskPct / 100;
-    const contract = B.SYMBOLS[sym].contract;
-    const lots = Math.floor(riskUsd / (risk * contract) * 100) / 100;
+    const riskUsd = st.balance * st.riskPct / 100;
+    const lots = symCfg.contract > 0 && risk > 0
+      ? Math.floor(riskUsd / (risk * symCfg.contract) * 100) / 100
+      : 0;
 
-    const digits = B.SYMBOLS[sym].digits;
+    const digits = symCfg.digits;
     const fmt = function (p) { return p.toFixed(digits); };
     const dirTxt = dir === 1 ? 'COMPRA' : 'VENTA';
 
-    const text = 'SEÑAL ' + dirTxt + ' ' + sym + ' ' + tf.toUpperCase() + '\n' +
+    const text = 'SEÑAL ' + dirTxt + ' ' + sym + ' ' + tf.toUpperCase() + (forced ? ' (forzada)' : '') + '\n' +
       'Entrada: ' + fmt(entry) + '\n' +
-      'SL: ' + fmt(sl) + ' (' + risk.toFixed(digits) + ' · ' + params.sl + '×ATR)\n' +
-      'TP: ' + fmt(tp) + ' (' + reward.toFixed(digits) + ' · ' + params.tp + '×ATR)\n' +
+      'SL: ' + fmt(sl) + ' (' + risk.toFixed(digits) + ' · ' + slMult + '×ATR)\n' +
+      'TP: ' + fmt(tp) + ' (' + reward.toFixed(digits) + ' · ' + tpMult + '×ATR)\n' +
       'R:R 1:' + rr.toFixed(2) + '\n' +
       'Lotes: ' + (lots >= 0.01 ? lots.toFixed(2) : '<0.01') + '\n' +
-      'Riesgo: $' + riskUsd.toFixed(0) + ' (' + state.settings.riskPct + '% de $' + state.settings.balance + ')\n' +
+      'Riesgo: $' + riskUsd.toFixed(0) + ' (' + st.riskPct + '% de $' + st.balance + ')\n' +
       'ATR (' + tf + '): ' + fmt(a.atr);
 
     state.lastSignal = {
       symbol: sym, tf: tf, dir: dir, entry: entry, sl: sl, tp: tp,
-      rr: rr, lots: lots, text: text, time: Date.now()
+      rr: rr, lots: lots, text: text, time: Date.now(), forced: forced
     };
 
     const cell = function (k, v, cls) {
       return '<div class="cell"><span>' + k + '</span><b class="' + (cls || '') + '">' + v + '</b></div>';
     };
 
-    let html = cell('Dirección', dirTxt, dir === 1 ? 'buy' : 'sell') +
+    let html = cell('Dirección', dirTxt + (forced ? ' ⚠' : ''), dir === 1 ? 'buy' : 'sell') +
       cell('Entrada', fmt(entry)) +
       cell('Stop-Loss', fmt(sl), 'sell') +
       cell('Take-Profit', fmt(tp), 'buy') +
       cell('R:R', '1:' + rr.toFixed(2)) +
       cell('Lotes', lots >= 0.01 ? lots.toFixed(2) : '<0.01') +
-      cell('Riesgo', '$' + riskUsd.toFixed(0) + ' (' + state.settings.riskPct + '%)') +
+      cell('Riesgo', '$' + riskUsd.toFixed(0) + ' (' + st.riskPct + '%)') +
       cell('ATR (' + tf + ')', fmt(a.atr));
 
-    if (tf !== params.bestTf) {
-      html += '<div class="msg small warn">La temporalidad recomendada para ' + sym + ' es ' + params.bestTf.toUpperCase() +
-        '. Estás en ' + tf.toUpperCase() + '. La señal sigue siendo válida pero con menor respaldo histórico.</div>';
+    if (forced) {
+      html += '<div class="msg small warn">Dirección forzada por ti. El medidor está neutral — úsalo bajo tu criterio.</div>';
     }
-
-    html += '<div class="msg small">Mejor franja: ' + params.session + '. Basada en la última vela cerrada de ' + tf.toUpperCase() + '.</div>';
+    if (tf !== symCfg.bestTf) {
+      html += '<div class="msg small">Temporalidad recomendada para ' + sym + ': ' +
+        symCfg.bestTf.toUpperCase() + '. Estás en ' + tf.toUpperCase() + '.</div>';
+    }
 
     box.innerHTML = html;
     copyBtn.disabled = false;
-    App.toast('Señal calculada: ' + dirTxt + ' ' + sym + ' ' + tf);
+    App.toast('Señal: ' + dirTxt + ' ' + sym + ' ' + tf + (forced ? ' (forzada)' : ''));
   };
 
   App.selectSymbol = function (sym) {
@@ -198,7 +222,9 @@
     state.lastSignal = null;
     $('copySignal').disabled = true;
     $('signalBox').innerHTML = '';
-    Array.prototype.forEach.call($('planDir').children, function (x, i) { x.classList.toggle('active', i === 0); });
+    Array.prototype.forEach.call($('planDir').children, function (x, i) {
+      x.classList.toggle('active', i === 0);
+    });
     if (state.tab === 'backtest' && App.runBacktest) App.runBacktest();
     const need = !state.bars[sym][state.tf];
     if (need) App.loadSymbol(sym).then(function () { App.renderLive(true); App.renderMTF(); });
@@ -213,9 +239,11 @@
     $('copySignal').disabled = true;
     $('signalBox').innerHTML = '';
     if (!state.bars[state.symbol][tf]) {
-      App.load(state.symbol, tf, 500).then(function () { App.renderLive(true); App.renderMTF(); }, function () { /* ya se informa en el estado */ });
+      App.load(state.symbol, tf, 500).then(function () {
+        App.renderLive(true); App.renderMTF();
+      }, function () {});
     } else if (Date.now() - (state.fetchedAt[state.symbol + '|' + tf] || 0) > 60000) {
-      App.load(state.symbol, tf, 500).catch(function () { /* idem */ });
+      App.load(state.symbol, tf, 500).catch(function () {});
     }
     if (state.tab === 'backtest' && App.runBacktest) App.runBacktest();
     App.renderLive(true);
@@ -241,6 +269,20 @@
     if (c) c.textContent = 'Estado: ' + msg + '.';
   };
 
+  App.renderRisk = function () {
+    const fill = $('riskFill'), val = $('riskValue'), alertEl = $('riskAlert');
+    if (!fill || !val) return;
+    const exp = App.exposureNow();
+    const s = state.settings;
+    const pct = exp.pct;
+    const maxPct = s.maxAggPct || 2;
+    const ratio = maxPct > 0 ? pct / maxPct : 0;
+    fill.style.width = Math.min(100, ratio * 100) + '%';
+    fill.className = 'risk-fill' + (ratio >= 1 ? ' bad' : ratio >= 0.7 ? ' warn' : '');
+    val.textContent = pct.toFixed(2) + '% / ' + maxPct.toFixed(2) + '%';
+    if (alertEl) alertEl.textContent = ratio >= 1 ? 'LÍMITE' : '';
+  };
+
   App.renderTop = function () {
     Array.prototype.forEach.call($('symbolBar').children, function (b) {
       const sym = b.dataset.sym, t = state.ticks[sym];
@@ -257,7 +299,9 @@
         c.className = 'sym-chg muted';
       }
     });
-    Array.prototype.forEach.call($('tfBar').children, function (b) { b.classList.toggle('active', b.dataset.tf === state.tf); });
+    Array.prototype.forEach.call($('tfBar').children, function (b) {
+      b.classList.toggle('active', b.dataset.tf === state.tf);
+    });
   };
 
   App.renderPrice = function () {
@@ -267,21 +311,37 @@
       $('priceChg').textContent = '';
       $('priceSub').textContent = sym + ' no responde con el nombre «' + D.feedName(sym) + '». ' +
         (state.discoverFailed[sym] ? 'Tampoco se halló otro nombre parecido: escríbelo en js/config.js (alias).' : 'Buscando el nombre correcto…');
-      return;
-    }
-    const price = t ? t.mid : (bars.length ? bars[bars.length - 1].c : null);
-    $('priceBig').textContent = App.fmt(sym, price);
-    const chg = $('priceChg');
-    if (t && t.dayPct != null && t.state !== 'closed') {
-      chg.textContent = App.sgn(t.dayPct, 2) + '% hoy';
-      chg.className = 'price-chg ' + (t.dayPct >= 0 ? 'up' : 'down');
     } else {
-      chg.textContent = '';
+      const price = t ? t.mid : (bars.length ? bars[bars.length - 1].c : null);
+      $('priceBig').textContent = App.fmt(sym, price);
+      const chg = $('priceChg');
+      if (t && t.dayPct != null && t.state !== 'closed') {
+        chg.textContent = App.sgn(t.dayPct, 2) + '% hoy';
+        chg.className = 'price-chg ' + (t.dayPct >= 0 ? 'up' : 'down');
+      } else {
+        chg.textContent = '';
+      }
+      $('priceSub').textContent = t
+        ? 'Bid ' + App.fmt(sym, t.bid) + ' · Ask ' + App.fmt(sym, t.ask) + ' · spread ' + App.fmt(sym, t.spread) +
+          (t.state === 'closed' ? ' · mercado cerrado, último precio' : '')
+        : 'Esperando precio…';
     }
-    $('priceSub').textContent = t
-      ? 'Bid ' + App.fmt(sym, t.bid) + ' · Ask ' + App.fmt(sym, t.ask) + ' · spread ' + App.fmt(sym, t.spread) +
-        (t.state === 'closed' ? ' · mercado cerrado, último precio' : '')
-      : 'Esperando precio…';
+
+    const sb = $('sessionBadge');
+    if (sb) {
+      const sess = App.sessionInfo();
+      const blocked = App.inBlackout();
+      if (blocked) {
+        sb.textContent = '⛔ Noticias: bloqueado';
+        sb.className = 'session-badge bad';
+      } else if (sess.open) {
+        sb.textContent = '✓ Sesión Londres/NY abierta';
+        sb.className = 'session-badge ok';
+      } else {
+        sb.textContent = '✗ Fuera de sesión (' + sess.startGmt + ':00–' + sess.endGmt + ':00 GMT)';
+        sb.className = 'session-badge bad';
+      }
+    }
   };
 
   App.needleAngle = function (score) {
@@ -311,10 +371,10 @@
     $('cntNeutral').textContent = a.counts.neutral;
     $('cntBuy').textContent = a.counts.buy;
     const ma = $('maSummary'), os = $('oscSummary');
-    ma.textContent = LABEL[a.ma.label.key];
-    ma.className = a.ma.label.key;
-    os.textContent = LABEL[a.osc.label.key];
-    os.className = a.osc.label.key;
+    ma.textContent = LABEL[a.trend.label.key];
+    ma.className = a.trend.label.key;
+    os.textContent = LABEL[a.momentum.label.key];
+    os.className = a.momentum.label.key;
   };
 
   App.renderMTF = function () {
@@ -343,12 +403,12 @@
     const sym = state.symbol, bars = state.bars[sym][state.tf] || [], t = state.ticks[sym];
     chart.setData(bars, { tf: state.tf, digits: B.SYMBOLS[sym].digits });
     const lines = [];
-    if (t) lines.push({ price: t.mid, color: '#2f7fd6', label: '', dash: true, range: false });
+    if (t) lines.push({ price: t.mid, color: '#3b82f6', label: '', dash: true, range: false });
     const p = App.planFor(sym, state.tf, state.planDir);
     if (p && !p.neutral) {
-      lines.push({ price: p.entry, color: '#7b8496', label: 'E', dash: true, range: true });
-      lines.push({ price: p.sl, color: '#d9443f', label: 'SL', dash: false, range: true });
-      lines.push({ price: p.tp, color: '#1f9d8f', label: 'TP', dash: false, range: true });
+      lines.push({ price: p.entry, color: '#6b7280', label: 'E', dash: true, range: true });
+      lines.push({ price: p.sl, color: '#ef4444', label: 'SL', dash: false, range: true });
+      lines.push({ price: p.tp, color: '#22c55e', label: 'TP', dash: false, range: true });
     }
     chart.setLines(lines);
     App.setLegend(null);
@@ -364,11 +424,14 @@
       return;
     }
     if (p.neutral) {
-      box.innerHTML = '<div class="msg">El medidor está en Neutral: no hay señal clara. Si quieres ver un plan igualmente, elige Comprar o Vender arriba.</div>';
+      box.innerHTML = '<div class="msg">El medidor está en Neutral: no hay señal clara. Si quieres ver un plan, elige Comprar o Vender arriba.</div>';
       return;
     }
     const lots = p.lots >= 0.01 ? p.lots.toFixed(2) : '<0,01';
-    const cell = function (k, v, cls) { return '<div class="cell"><span>' + k + '</span><b class="' + (cls || '') + '">' + v + '</b></div>'; };
+    const cell = function (k, v, cls) {
+      return '<div class="cell"><span>' + k + '</span><b class="' + (cls || '') + '">' + v + '</b></div>';
+    };
+    const check = App.canOpenNow(p.symbol, p.riskUsd);
     box.innerHTML =
       cell('Dirección', p.dir === 1 ? 'COMPRA' : 'VENTA', p.dir === 1 ? 'buy' : 'sell') +
       cell('Entrada', App.fmt(sym, p.entry)) +
@@ -377,9 +440,9 @@
       cell('Relación R:R', '1 : ' + p.rr.toFixed(2)) +
       cell('Lotes (riesgo $' + p.riskUsd.toFixed(0) + ')', lots) +
       '<div class="msg small">Stop a ' + App.fmt(sym, p.risk) + ' del precio (' +
-        (state.settings.sl || 1.5) + '×ATR). Ajusta saldo, riesgo y múltiplos en «Ajustes».</div>' +
-      (p.lots > 20
-        ? '<div class="msg small warn">Son muchos lotes: muchos brókers limitan el tamaño máximo por orden. Si el tuyo no lo permite, baja el riesgo en «Ajustes» o usa un stop más amplio.</div>'
+        (state.settings.sl || B.SYMBOLS[sym].defaultSl) + '×ATR).</div>' +
+      (!check.ok
+        ? '<div class="msg small bad">No se puede registrar: ' + check.reason + '</div>'
         : '');
   };
 
@@ -397,13 +460,14 @@
           '<td class="r ' + key + '">' + LABEL[key] + '</td></tr>';
       }).join('');
     }
-    $('maTable').tBodies[0].innerHTML = a ? rows(a.ma.votes, true) : '';
-    $('oscTable').tBodies[0].innerHTML = a ? rows(a.osc.votes, false) : '';
+    $('maTable').tBodies[0].innerHTML = a ? rows(a.trend.votes, true) : '';
+    $('oscTable').tBodies[0].innerHTML = a ? rows(a.momentum.votes, false) : '';
   };
 
   App.renderLive = function (full) {
     App.renderTop();
     App.renderStatus();
+    App.renderRisk();
     if (state.tab === 'journal' && App.renderJournalLive) { App.renderJournalLive(); return; }
     if (state.tab === 'settings' && App.renderSymbolStatus) { App.renderSymbolStatus(); return; }
     if (state.tab !== 'signals') return;

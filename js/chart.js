@@ -1,21 +1,34 @@
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory(require('./indicators.js'));
-  else { root.AT = root.AT || {}; root.AT.chart = factory(root.AT.indicators); }
-}(typeof self !== 'undefined' ? self : this, function (I) {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./indicators.js'), require('./data.js'));
+  else { root.AT = root.AT || {}; root.AT.chart = factory(root.AT.indicators, root.AT.data); }
+}(typeof self !== 'undefined' ? self : this, function (I, D) {
   'use strict';
 
-  const PAD = { l: 6, r: 62, t: 8, b: 20 };
+  const PAD = { l: 6, r: 68, t: 8, b: 22 };
+  const GAP_FACTOR = 3;
 
   function create(canvas, opts) {
     opts = opts || {};
     const ctx = canvas.getContext('2d');
     const st = {
-      bars: [], count: 90, offset: 0, lines: [], ema: [],
-      tf: '', digits: 2, px: null, py: null, drag: null, raf: 0
+      bars: [],
+      count: 90,
+      offset: 0,
+      lines: [],
+      ema: [],
+      tf: '',
+      tfMs: 0,
+      digits: 2,
+      px: null,
+      py: null,
+      drag: null,
+      raf: 0
     };
 
     function range() {
-      const n = st.bars.length, count = Math.min(st.count, n), end = n - st.offset;
+      const n = st.bars.length;
+      const count = Math.min(st.count, n);
+      const end = n - st.offset;
       return { start: Math.max(0, end - count), end: end, count: Math.max(1, Math.min(count, end)) };
     }
 
@@ -24,10 +37,28 @@
       st.offset = Math.max(0, Math.min(st.offset, Math.max(0, n - Math.min(st.count, n))));
     }
 
+    function computeSlots() {
+      const r = range();
+      const slots = [];
+      let slot = 0;
+      for (let i = r.start; i < r.end; i++) {
+        if (i > r.start && st.tfMs > 0) {
+          const dt = st.bars[i].t - st.bars[i - 1].t;
+          if (dt > st.tfMs * GAP_FACTOR) slot++;
+        }
+        slots.push(slot);
+        slot++;
+      }
+      return { slots: slots, total: slot };
+    }
+
     function fmtTime(t) {
       const d = new Date(t);
       if (st.tf === '1d') return d.toLocaleDateString('es', { day: '2-digit', month: '2-digit' });
-      if (st.tf === '4h') return d.toLocaleDateString('es', { day: '2-digit', month: '2-digit' }) + ' ' + String(d.getHours()).padStart(2, '0') + 'h';
+      if (st.tf === '4h') {
+        return d.toLocaleDateString('es', { day: '2-digit', month: '2-digit' }) + ' ' +
+          String(d.getHours()).padStart(2, '0') + 'h';
+      }
       return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
     }
 
@@ -38,21 +69,28 @@
     }
 
     function setData(bars, o) {
-      st.bars = bars;
-      if (o && o.tf) st.tf = o.tf;
+      st.bars = bars || [];
+      if (o && o.tf) {
+        st.tf = o.tf;
+        st.tfMs = (D && D.TF && D.TF[o.tf]) || 0;
+      }
       if (o && o.digits != null) st.digits = o.digits;
-      const c = bars.map(function (b) { return b.c; });
+      const c = st.bars.map(function (b) { return b.c; });
       st.ema = [
-        { arr: I.ema(c, 20), css: '--ema1', def: '#f5a623' },
-        { arr: I.ema(c, 50), css: '--ema2', def: '#4aa3ff' },
-        { arr: I.ema(c, 200), css: '--ema3', def: '#b57bff' }
+        { arr: I.ema(c, 20), css: '--ema1', def: '#f59e0b' },
+        { arr: I.ema(c, 50), css: '--ema2', def: '#3b82f6' },
+        { arr: I.ema(c, 200), css: '--ema3', def: '#a855f7' }
       ];
       clampOffset();
       schedule();
     }
 
     function setLines(lines) { st.lines = lines || []; schedule(); }
-    function zoom(f) { st.count = Math.max(20, Math.min(400, Math.round(st.count * f))); clampOffset(); schedule(); }
+    function zoom(f) {
+      st.count = Math.max(20, Math.min(400, Math.round(st.count * f)));
+      clampOffset();
+      schedule();
+    }
     function reset() { st.count = 90; st.offset = 0; schedule(); }
 
     function draw() {
@@ -68,23 +106,40 @@
       if (!st.bars.length) return;
 
       const cs = getComputedStyle(canvas);
-      const col = function (n, d) { return (cs.getPropertyValue(n) || '').trim() || d; };
-      const up = col('--up', '#00d4aa'), dn = col('--down', '#ff4757');
-      const grid = col('--grid', 'rgba(128,128,128,.18)'), muted = col('--muted', '#8b93a1');
-      const r = range(), vis = st.bars.slice(r.start, r.end);
+      const col = function (n, d) {
+        const v = (cs.getPropertyValue(n) || '').trim();
+        return v || d;
+      };
+      const up = col('--up', '#22c55e'), dn = col('--down', '#ef4444');
+      const grid = col('--grid', 'rgba(128,128,128,.18)'), muted = col('--muted', '#9aa4b2');
+
+      const r = range();
+      const vis = st.bars.slice(r.start, r.end);
+      const slots = computeSlots();
       const plotW = w - PAD.l - PAD.r, plotH = h - PAD.t - PAD.b;
-      const step = plotW / r.count;
+      const step = plotW / Math.max(1, slots.total);
 
       let lo = Infinity, hi = -Infinity;
-      vis.forEach(function (b) { if (b.l < lo) lo = b.l; if (b.h > hi) hi = b.h; });
-      st.lines.forEach(function (L) {
-        if (L.price != null && L.range) { lo = Math.min(lo, L.price); hi = Math.max(hi, L.price); }
+      vis.forEach(function (b) {
+        if (b.l < lo) lo = b.l;
+        if (b.h > hi) hi = b.h;
       });
+      st.lines.forEach(function (L) {
+        if (L.price != null && L.range) {
+          lo = Math.min(lo, L.price);
+          hi = Math.max(hi, L.price);
+        }
+      });
+      if (!isFinite(lo) || !isFinite(hi)) return;
       const pad = (hi - lo) * 0.06 || 1;
       lo -= pad;
       hi += pad;
+
       const y = function (p) { return PAD.t + (hi - p) / (hi - lo) * plotH; };
-      const x = function (i) { return PAD.l + (i - r.start + 0.5) * step; };
+      const xs = function (idx) {
+        const s = slots.slots[idx - r.start];
+        return PAD.l + (s + 0.5) * step;
+      };
       const fmt = function (p) { return p.toFixed(st.digits); };
 
       ctx.font = '11px system-ui, -apple-system, Segoe UI, sans-serif';
@@ -106,9 +161,10 @@
       ctx.textAlign = 'center';
       ctx.textBaseline = 'alphabetic';
       for (let j = 0; j < 4; j++) {
-        const i = r.start + Math.floor(j * (r.count - 1) / 3);
-        if (st.bars[i]) {
-          ctx.fillText(fmtTime(st.bars[i].t), Math.min(Math.max(x(i), 24), PAD.l + plotW - 24), h - 5);
+        const idx = r.start + Math.floor(j * (r.count - 1) / 3);
+        if (st.bars[idx]) {
+          const xx = Math.min(Math.max(xs(idx), 24), PAD.l + plotW - 24);
+          ctx.fillText(fmtTime(st.bars[idx].t), xx, h - 5);
         }
       }
 
@@ -116,18 +172,23 @@
       ctx.beginPath();
       ctx.rect(PAD.l, PAD.t, plotW, plotH);
       ctx.clip();
+
       const bodyW = Math.max(1, step * 0.68);
       for (let i = r.start; i < r.end; i++) {
-        const b = st.bars[i], color = b.c >= b.o ? up : dn, xx = x(i);
+        const b = st.bars[i];
+        const color = b.c >= b.o ? up : dn;
+        const xx = xs(i);
         ctx.strokeStyle = color;
         ctx.fillStyle = color;
         ctx.beginPath();
         ctx.moveTo(xx, y(b.h));
         ctx.lineTo(xx, y(b.l));
         ctx.stroke();
-        const top = y(Math.max(b.o, b.c)), bot = y(Math.min(b.o, b.c));
+        const top = y(Math.max(b.o, b.c));
+        const bot = y(Math.min(b.o, b.c));
         ctx.fillRect(xx - bodyW / 2, top, bodyW, Math.max(1, bot - top));
       }
+
       st.ema.forEach(function (e) {
         ctx.strokeStyle = col(e.css, e.def);
         ctx.lineWidth = 1.3;
@@ -135,11 +196,12 @@
         let started = false;
         for (let i = r.start; i < r.end; i++) {
           if (e.arr[i] == null) continue;
-          if (!started) { ctx.moveTo(x(i), y(e.arr[i])); started = true; }
-          else ctx.lineTo(x(i), y(e.arr[i]));
+          if (!started) { ctx.moveTo(xs(i), y(e.arr[i])); started = true; }
+          else ctx.lineTo(xs(i), y(e.arr[i]));
         }
         ctx.stroke();
       });
+
       ctx.restore();
 
       ctx.lineWidth = 1;
@@ -183,23 +245,36 @@
     }
 
     function indexAt(px) {
-      const r = range(), step = (canvas.clientWidth - PAD.l - PAD.r) / r.count;
-      const i = r.start + Math.floor((px - PAD.l) / step);
-      return i >= r.start && i < r.end ? i : -1;
+      const r = range();
+      const slots = computeSlots();
+      const step = (canvas.clientWidth - PAD.l - PAD.r) / Math.max(1, slots.total);
+      const slot = Math.floor((px - PAD.l) / step);
+      if (slot < 0 || slot >= slots.total) return -1;
+      for (let i = 0; i < slots.slots.length; i++) {
+        if (slots.slots[i] === slot) return r.start + i;
+      }
+      return -1;
     }
 
-    function local(e) { const b = canvas.getBoundingClientRect(); return { x: e.clientX - b.left, y: e.clientY - b.top }; }
+    function local(e) {
+      const b = canvas.getBoundingClientRect();
+      return { x: e.clientX - b.left, y: e.clientY - b.top };
+    }
 
     canvas.addEventListener('pointerdown', function (e) {
       const p = local(e);
       st.drag = { x: p.x, offset: st.offset, moved: false };
-      if (canvas.setPointerCapture) { try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* sin captura */ } }
+      if (canvas.setPointerCapture) {
+        try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+      }
     });
 
     canvas.addEventListener('pointermove', function (e) {
       const p = local(e);
       if (st.drag) {
-        const step = (canvas.clientWidth - PAD.l - PAD.r) / range().count;
+        const r = range();
+        const slots = computeSlots();
+        const step = (canvas.clientWidth - PAD.l - PAD.r) / Math.max(1, slots.total);
         const moved = Math.round((p.x - st.drag.x) / step);
         if (Math.abs(p.x - st.drag.x) > 4) st.drag.moved = true;
         st.offset = st.drag.offset + moved;
@@ -207,7 +282,8 @@
       } else if (e.pointerType === 'mouse') {
         st.px = p.x;
         st.py = p.y;
-        if (opts.onHover) opts.onHover(st.bars[indexAt(p.x)] || null);
+        const i = indexAt(p.x);
+        if (opts.onHover) opts.onHover(i >= 0 ? st.bars[i] : null);
       }
       schedule();
     });
@@ -220,10 +296,22 @@
       if (opts.onHover) opts.onHover(null);
       schedule();
     });
-    canvas.addEventListener('wheel', function (e) { e.preventDefault(); zoom(e.deltaY > 0 ? 1.15 : 0.87); }, { passive: false });
+
+    canvas.addEventListener('wheel', function (e) {
+      e.preventDefault();
+      zoom(e.deltaY > 0 ? 1.15 : 0.87);
+    }, { passive: false });
+
     canvas.addEventListener('dblclick', reset);
 
-    return { setData: setData, setLines: setLines, zoom: zoom, reset: reset, draw: draw, state: st };
+    return {
+      setData: setData,
+      setLines: setLines,
+      zoom: zoom,
+      reset: reset,
+      draw: draw,
+      state: st
+    };
   }
 
   return { create: create };

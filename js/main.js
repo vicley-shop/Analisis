@@ -19,6 +19,25 @@
     });
   }
 
+  function loadNews() {
+    return new Promise(function (resolve) {
+      if (typeof fetch !== 'function') { resolve(false); return; }
+      fetch('data/news.json', { cache: 'no-store' })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (d) {
+          if (Array.isArray(d)) {
+            state.news = d.filter(function (n) {
+              return n && isFinite(n.ts) && n.impact === 'high';
+            }).map(function (n) {
+              return { ts: n.ts, impact: n.impact, title: n.title || '', windowMs: (n.windowMin || 30) * 60000 };
+            });
+          }
+          resolve(true);
+        })
+        .catch(function () { resolve(false); });
+    });
+  }
+
   function init() {
     App.buildSymbolBar();
     App.buildTfBar();
@@ -29,11 +48,17 @@
     App.wireTabs();
     App.wireJournal();
     App.wireSettings();
+
     App.renderTop();
     App.renderStatus();
+    App.renderRisk();
     App.renderGauge(null);
     App.renderMTF();
     App.renderSettings();
+
+    loadNews().then(function () {
+      if (state.settings.newsFilter) App.renderPrice();
+    });
 
     App.feed = D.createFeed(App.SYMS, {
       tick: App.onTick,
@@ -59,12 +84,13 @@
 
     App.SYMS.forEach(function (s) {
       if (s !== state.symbol) {
-        App.load(s, state.settings.journalTf, 500).catch(function () { /* el estado ya avisa */ });
+        App.load(s, state.settings.journalTf, 500).catch(function () {});
       }
     });
 
     setInterval(function () {
       if (state.tab === 'signals') App.renderMTF();
+      App.renderRisk();
     }, 5000);
 
     setInterval(function () {
@@ -81,6 +107,9 @@
     window.addEventListener('resize', function () { App.scheduleRender(); });
   }
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
-  else init();
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
 })();

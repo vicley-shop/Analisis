@@ -8,10 +8,11 @@
   const TF = { '1m': 60000, '5m': 300000, '15m': 900000, '30m': 1800000, '1h': 3600000, '4h': 14400000, '1d': 86400000 };
   const TF_LIST = ['1m', '5m', '15m', '30m', '1h', '4h', '1d'];
 
-  function base() { return (G.AT_CONFIG && G.AT_CONFIG.base) || 'https://biquote.io'; }
-
-  function aliasMap() { return (G.AT_CONFIG && G.AT_CONFIG.alias) || {}; }
+  function cfg() { return G.AT_CONFIG || {}; }
+  function base() { return cfg().base || 'https://biquote.io'; }
+  function aliasMap() { return cfg().alias || {}; }
   function feedName(sym) { return aliasMap()[sym] || sym; }
+
   function internalName(name) {
     const up = String(name).toUpperCase(), a = aliasMap();
     for (const k in a) if (String(a[k]).toUpperCase() === up) return k;
@@ -31,10 +32,15 @@
         throw e;
       }
       return r.json();
-    }, function (err) { if (timer) clearTimeout(timer); throw err; });
+    }, function (err) {
+      if (timer) clearTimeout(timer);
+      throw err;
+    });
   }
 
-  function isMissing(e) { return !!e && (e.status === 404 || e.status === 400 || e.status === 410 || e.status === 422); }
+  function isMissing(e) {
+    return !!e && (e.status === 404 || e.status === 400 || e.status === 410 || e.status === 422);
+  }
 
   function normBar(b) {
     const t = Date.parse(b.openTime), o = +b.open, h = +b.high, l = +b.low, c = +b.close;
@@ -65,12 +71,16 @@
     const ts = Date.parse(t.timestamp);
     return {
       symbol: internalName(t.symbol),
-      bid: isFinite(bid) ? bid : mid, ask: isFinite(ask) ? ask : mid, mid: mid,
+      bid: isFinite(bid) ? bid : mid,
+      ask: isFinite(ask) ? ask : mid,
+      mid: mid,
       spread: isFinite(+t.spread) ? +t.spread : (isFinite(ask - bid) ? ask - bid : 0),
       ts: isFinite(ts) ? ts : Date.now(),
       dayPct: isFinite(+t.dayDiffPercent) ? +t.dayDiffPercent : null,
-      high: isFinite(+t.high) ? +t.high : null, low: isFinite(+t.low) ? +t.low : null,
-      state: t.marketState || 'open', stale: !!t.stale
+      high: isFinite(+t.high) ? +t.high : null,
+      low: isFinite(+t.low) ? +t.low : null,
+      state: t.marketState || 'open',
+      stale: !!t.stale
     };
   }
 
@@ -81,7 +91,9 @@
       if (Array.isArray(d)) arr = d;
       else if (d && Array.isArray(d.ticks)) arr = d.ticks;
       else if (d && typeof d === 'object') {
-        arr = Object.keys(d).map(function (k) { return d[k] && typeof d[k] === 'object' ? Object.assign({ symbol: k }, d[k]) : null; });
+        arr = Object.keys(d).map(function (k) {
+          return d[k] && typeof d[k] === 'object' ? Object.assign({ symbol: k }, d[k]) : null;
+        });
       } else arr = [];
       return arr.map(normTick).filter(Boolean);
     });
@@ -108,7 +120,8 @@
       if (!name || seen[up]) return;
       seen[up] = true;
       const rest = name.slice(sym.length);
-      if (/tether|usd\s*coin/i.test(String((it && it.description) || '')) || (up.indexOf(sym) === 0 && (rest === 'T' || rest === 'C'))) return;
+      if (/tether|usd\s*coin/i.test(String((it && it.description) || '')) ||
+          (up.indexOf(sym) === 0 && (rest === 'T' || rest === 'C'))) return;
       let score = 0;
       if (up === sym) score = 100;
       else if (up.indexOf(sym) === 0 && up.length - sym.length <= 4) score = 90 - (up.length - sym.length);
@@ -123,14 +136,16 @@
   function discover(sym) {
     const cur = feedName(sym).toUpperCase(), qs = [sym];
     if (WORD[sym]) qs.push(WORD[sym]);
-    return Promise.all(qs.map(function (q) { return searchCatalog(q).catch(function () { return []; }); })).then(function (lists) {
-      const names = rankNames(sym, [].concat.apply([], lists)).filter(function (n) { return n.toUpperCase() !== cur; }).slice(0, 4);
-      return names.reduce(function (p, name) {
-        return p.then(function (found) {
-          return found || fetchRaw(name, '1h', 5).then(function () { return name; }, function () { return null; });
-        });
-      }, Promise.resolve(null));
-    }).catch(function () { return null; });
+    return Promise.all(qs.map(function (q) { return searchCatalog(q).catch(function () { return []; }); }))
+      .then(function (lists) {
+        const names = rankNames(sym, [].concat.apply([], lists))
+          .filter(function (n) { return n.toUpperCase() !== cur; }).slice(0, 4);
+        return names.reduce(function (p, name) {
+          return p.then(function (found) {
+            return found || fetchRaw(name, '1h', 5).then(function () { return name; }, function () { return null; });
+          });
+        }, Promise.resolve(null));
+      }).catch(function () { return null; });
   }
 
   function pool(tasks, limit) {
@@ -139,8 +154,10 @@
     function worker() {
       if (next >= tasks.length) return Promise.resolve();
       const idx = next++;
-      return tasks[idx]().then(function (v) { results[idx] = { ok: true, v: v }; },
-                               function (e) { results[idx] = { ok: false, e: e }; }).then(worker);
+      return tasks[idx]().then(
+        function (v) { results[idx] = { ok: true, v: v }; },
+        function (e) { results[idx] = { ok: false, e: e }; }
+      ).then(worker);
     }
     const ws = [];
     for (let i = 0; i < Math.min(limit || 4, tasks.length); i++) ws.push(worker());
@@ -170,13 +187,17 @@
     let conn = null, pollTimer = null, mode = 'off', backoffUntil = 0, stopped = false;
     const paused = {}, reported = {};
 
-    function active() { const now = Date.now(); return symbols.filter(function (s) { return !(paused[s] > now); }); }
+    function active() {
+      const now = Date.now();
+      return symbols.filter(function (s) { return !(paused[s] > now); });
+    }
     function feedList() { return active().map(feedName); }
     function setMode(m, err) { if (m !== mode || err) { mode = m; if (handlers.status) handlers.status(m, err); } }
     function give(arr) {
       arr.forEach(function (t) {
         if (reported[t.symbol]) {
-          delete reported[t.symbol]; delete paused[t.symbol];
+          delete reported[t.symbol];
+          delete paused[t.symbol];
           if (handlers.found) handlers.found(t.symbol);
         }
         if (handlers.tick) handlers.tick(t);
@@ -190,14 +211,17 @@
 
     function drop(sym) {
       const first = !reported[sym];
-      paused[sym] = Date.now() + RETRY_MS; reported[sym] = true;
+      paused[sym] = Date.now() + RETRY_MS;
+      reported[sym] = true;
       if (first && handlers.missing) handlers.missing(sym);
     }
 
     function isolate() {
       return Promise.all(active().map(function (s) {
-        return fetchLatest([s]).then(function (arr) { give(arr); return { s: s, ok: true }; },
-                                     function (e) { return { s: s, ok: false, miss: isMissing(e), e: e }; });
+        return fetchLatest([s]).then(
+          function (arr) { give(arr); return { s: s, ok: true }; },
+          function (e) { return { s: s, ok: false, miss: isMissing(e), e: e }; }
+        );
       })).then(function (r) {
         if (r.some(function (x) { return x.ok; })) {
           r.forEach(function (x) { if (x.miss) drop(x.s); });
@@ -233,9 +257,10 @@
           conn.invoke('Subscribe', feedList()).then(function () { setMode('live'); startPolling(20000); });
         });
         conn.onclose(function () { if (!stopped) { setMode('polling'); startPolling(2000); } });
-        return conn.start().then(function () { return conn.invoke('Subscribe', feedList()); })
+        return conn.start()
+          .then(function () { return conn.invoke('Subscribe', feedList()); })
           .then(function () { setMode('live'); return true; },
-                function () { try { conn.stop(); } catch (e) { /* ya cerrada */ } conn = null; return false; });
+                function () { try { conn.stop(); } catch (e) {} conn = null; return false; });
       } catch (e) { conn = null; return Promise.resolve(false); }
     }
 
@@ -244,7 +269,8 @@
         stopped = false;
         const client = handlers.loadClient ? handlers.loadClient().catch(function () { return false; }) : Promise.resolve(true);
         const first = poll().then(function () { if (!pollTimer) startPolling(2000); });
-        return Promise.all([first, client]).then(function () { return startSignalR(); })
+        return Promise.all([first, client])
+          .then(function () { return startSignalR(); })
           .then(function (ok) { if (ok) startPolling(20000); });
       },
       stop: function () {
@@ -255,15 +281,28 @@
       mode: function () { return mode; },
       missing: function () { return Object.keys(reported); },
       resubscribe: function (sym) {
-        delete paused[sym]; delete reported[sym];
-        if (conn && mode === 'live') conn.invoke('Subscribe', feedList()).catch(function () { /* lo cubre la consulta periódica */ });
+        delete paused[sym];
+        delete reported[sym];
+        if (conn && mode === 'live') conn.invoke('Subscribe', feedList()).catch(function () {});
       }
     };
   }
 
   return {
-    TF: TF, TF_LIST: TF_LIST, base: base, feedName: feedName, internalName: internalName, isMissing: isMissing,
-    fetchBars: fetchBars, fetchLatest: fetchLatest, normTick: normTick, normBar: normBar,
-    rankNames: rankNames, discover: discover, pool: pool, applyTick: applyTick, createFeed: createFeed
+    TF: TF,
+    TF_LIST: TF_LIST,
+    base: base,
+    feedName: feedName,
+    internalName: internalName,
+    isMissing: isMissing,
+    fetchBars: fetchBars,
+    fetchLatest: fetchLatest,
+    normTick: normTick,
+    normBar: normBar,
+    rankNames: rankNames,
+    discover: discover,
+    pool: pool,
+    applyTick: applyTick,
+    createFeed: createFeed
   };
 }));

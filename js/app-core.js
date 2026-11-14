@@ -3,17 +3,25 @@
   const AT = window.AT, S = AT.signals, ST = AT.strategies, B = AT.backtest, D = AT.data, J = AT.journal;
   const App = AT.app = {};
   const SYMS = Object.keys(B.SYMBOLS);
-  const SETTINGS_KEY = 'at.settings.v2';
+  const SETTINGS_KEY = 'at.settings.v3';
+  const CFG = window.AT_CONFIG || {};
+  const RISK_CFG = CFG.risk || {};
 
   const DEFAULTS = {
-    balance: 10000,
-    riskPct: 1,
+    balance: RISK_CFG.defaultBalance || 10000,
+    riskPct: RISK_CFG.defaultRiskPct || 1,
+    maxAggPct: RISK_CFG.defaultMaxAggregatePct || 2,
+    maxTradesPerFamily: RISK_CFG.defaultMaxTradesPerFamily || 1,
     sl: null,
     tp: null,
     spread: {},
     auto: true,
     journalTf: '15m',
-    journalStrategy: 'consenso'
+    journalStrategy: 'consenso',
+    sessionFilter: true,
+    newsFilter: false,
+    trailing: false,
+    adxFilter: true
   };
 
   SYMS.forEach(function (s) { DEFAULTS.spread[s] = B.SYMBOLS[s].spread; });
@@ -35,32 +43,13 @@
     let s = {};
     try {
       s = JSON.parse(store.getItem(SETTINGS_KEY)) || {};
-    } catch (e) {
-      s = {};
-    }
+    } catch (e) { s = {}; }
     const out = Object.assign({}, DEFAULTS, s);
     out.spread = Object.assign({}, DEFAULTS.spread, s.spread || {});
     if (!ST.byId[out.journalStrategy]) out.journalStrategy = DEFAULTS.journalStrategy;
     if (!D.TF[out.journalTf]) out.journalTf = DEFAULTS.journalTf;
     return out;
   }
-
-  const ALIAS_KEY = 'at.alias.v2';
-  const cfg = window.AT_CONFIG = window.AT_CONFIG || {};
-  cfg.alias = cfg.alias || {};
-
-  let savedAlias = {};
-  try {
-    savedAlias = JSON.parse(store.getItem(ALIAS_KEY)) || {};
-  } catch (e) {
-    savedAlias = {};
-  }
-
-  SYMS.forEach(function (s) {
-    if ((!cfg.alias[s] || cfg.alias[s] === s) && typeof savedAlias[s] === 'string' && savedAlias[s]) {
-      cfg.alias[s] = savedAlias[s];
-    }
-  });
 
   const state = App.state = {
     symbol: 'XAUUSD',
@@ -80,7 +69,8 @@
     discoverFailed: {},
     missingAt: {},
     settings: loadSettings(),
-    journal: J.create(store)
+    journal: J.create(store),
+    news: []
   };
 
   SYMS.forEach(function (s) { state.bars[s] = {}; });
@@ -88,7 +78,7 @@
   App.SYMS = SYMS;
   App.defaults = function () { return JSON.parse(JSON.stringify(DEFAULTS)); };
   App.saveSettings = function () {
-    try { store.setItem(SETTINGS_KEY, JSON.stringify(state.settings)); } catch (e) { /* sin almacenamiento */ }
+    try { store.setItem(SETTINGS_KEY, JSON.stringify(state.settings)); } catch (e) {}
   };
 
   App.esc = function (s) {
@@ -101,12 +91,19 @@
     return p == null || !isFinite(p) ? '—' : p.toFixed(B.SYMBOLS[sym].digits);
   };
 
-  App.sgn = function (x, d) { return (x >= 0 ? '+' : '') + x.toFixed(d); };
+  App.sgn = function (x, d) {
+    if (!isFinite(x)) return '—';
+    return (x >= 0 ? '+' : '') + x.toFixed(d);
+  };
 
   App.fmtDate = function (ms) {
     return new Date(ms).toLocaleString('es', {
       day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false
     });
+  };
+
+  App.fmtTime = function (ms) {
+    return new Date(ms).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit', hour12: false });
   };
 
   App.toast = function (msg) {
@@ -121,6 +118,22 @@
     el.className = 'show';
     clearTimeout(App._tt);
     App._tt = setTimeout(function () { el.className = ''; }, 4500);
+  };
+
+  App.sessionInfo = function (t) {
+    const ts = t || Date.now();
+    const h = new Date(ts).getUTCHours();
+    const cfg = (CFG.sessions && CFG.sessions.combined) || { startGmt: 7, endGmt: 21 };
+    const open = h >= cfg.startGmt && h < cfg.endGmt;
+    return { open: open, hourGmt: h, startGmt: cfg.startGmt, endGmt: cfg.endGmt };
+  };
+
+  App.inBlackout = function (t) {
+    if (!state.settings.newsFilter) return false;
+    const ts = t || Date.now();
+    return state.news.some(function (n) {
+      return Math.abs(n.ts - ts) < (n.windowMs || 30 * 60000);
+    });
   };
 
   App.load = function (sym, tf, limit) {
@@ -179,9 +192,8 @@
         App.scheduleRender();
         return;
       }
-      cfg.alias[sym] = name;
-      savedAlias[sym] = name;
-      try { store.setItem(ALIAS_KEY, JSON.stringify(savedAlias)); } catch (e) { /* sin almacenamiento */ }
+      CFG.alias = CFG.alias || {};
+      CFG.alias[sym] = name;
       delete state.unavailable[sym];
       if (App.feed) App.feed.resubscribe(sym);
       App.toast(sym + ' se llama «' + name + '». Cargando…');
@@ -189,7 +201,7 @@
       again.then(function () {
         App.renderLive(true);
         App.renderMTF();
-      }, function () { /* ya se informa */ });
+      }, function () {});
     });
   };
 
@@ -200,7 +212,7 @@
     if (App.renderSymbolStatus) App.renderSymbolStatus();
     if (!state.bars[sym][state.tf] && !state.loading[sym + '|' + state.tf]) {
       (sym === state.symbol ? App.loadSymbol(sym) : App.load(sym, state.settings.journalTf, 500))
-        .then(function () { App.renderLive(true); App.renderMTF(); }, function () { /* ya se informa */ });
+        .then(function () { App.renderLive(true); App.renderMTF(); }, function () {});
     }
     App.scheduleRender();
   };
@@ -231,6 +243,17 @@
     return D.pool(tasks, 3).then(function () {
       SYMS.forEach(App.checkAuto);
     });
+  };
+
+  App.strategyOpts = function () {
+    const s = state.settings;
+    const sess = CFG.sessions && CFG.sessions.combined;
+    return {
+      sessionFilter: !!s.sessionFilter,
+      sessionStart: sess ? sess.startGmt : 7,
+      sessionEnd: sess ? sess.endGmt : 21,
+      adxFilter: !!s.adxFilter
+    };
   };
 
   App.analysis = function (sym, tf) {
@@ -273,6 +296,7 @@
       App.toast(tr.symbol + ' ' + (tr.reason === 'tp' ? 'objetivo' : tr.reason === 'sl' ? 'stop' : 'cierre') + ': ' + App.sgn(tr.r, 2) + ' R');
     });
     if (state.tab === 'journal' && App.renderJournal) App.renderJournal();
+    if (App.renderRisk) App.renderRisk();
   };
 
   let renderTimer = 0, lastRender = 0;
@@ -282,6 +306,7 @@
       renderTimer = 0;
       lastRender = Date.now();
       if (App.renderLive) App.renderLive();
+      if (App.renderRisk) App.renderRisk();
     }, Math.max(0, 400 - (Date.now() - lastRender)));
   };
 
@@ -292,12 +317,13 @@
     if (!dir) return { neutral: true, a: a };
     const tick = state.ticks[sym];
     const entry = tick ? (dir === 1 ? tick.ask : tick.bid) : a.price;
+    const st = B.SYMBOLS[sym];
     const p = B.plan(dir, entry, a.atr, {
-      slMult: s.sl || 1.5,
-      tpMult: s.tp || 2.5,
+      slMult: s.sl || st.defaultSl,
+      tpMult: s.tp || st.defaultTp,
       balance: s.balance,
       riskPct: s.riskPct,
-      contract: B.SYMBOLS[sym].contract
+      contract: st.contract
     });
     p.symbol = sym;
     p.tf = tf;
@@ -321,12 +347,19 @@
     if (!s.auto) return;
     const bars = state.bars[sym][s.journalTf];
     if (!bars) return;
-    const sig = J.checkSignal(bars, s.journalStrategy, state.journal.seen(seenKey(sym)));
+
+    if (s.sessionFilter && !App.sessionInfo().open) return;
+    if (App.inBlackout()) return;
+
+    const sig = J.checkSignal(bars, s.journalStrategy, state.journal.seen(seenKey(sym)), App.strategyOpts());
     if (!sig) return;
     state.journal.markSeen(seenKey(sym), sig.barT);
-    if (sig.dir === 0 || state.journal.openTrades(sym).length) return;
+    if (sig.dir === 0) return;
+    if (state.journal.openTrades(sym).length) return;
+
     const tfMs = D.TF[s.journalTf];
     if (Date.now() - (sig.barT + tfMs) > 2 * tfMs + 30000) return;
+
     const st = ST.byId[s.journalStrategy], tick = state.ticks[sym];
     const entry = tick ? (sig.dir === 1 ? tick.ask : tick.bid) : sig.price;
     const p = B.plan(sig.dir, entry, sig.atr, {
@@ -336,6 +369,18 @@
       riskPct: s.riskPct,
       contract: B.SYMBOLS[sym].contract
     });
+
+    const check = state.journal.canOpen(sym, {
+      balance: s.balance,
+      maxAggPct: s.maxAggPct,
+      maxTradesPerFamily: s.maxTradesPerFamily,
+      riskUsd: p.riskUsd
+    });
+    if (!check.ok) {
+      App.toast('Señal en ' + sym + ' bloqueada: ' + check.reason);
+      return;
+    }
+
     state.journal.open({
       symbol: sym,
       tf: s.journalTf,
@@ -350,5 +395,19 @@
     });
     App.toast('Nueva señal: ' + (sig.dir === 1 ? 'COMPRA ' : 'VENTA ') + sym + ' @ ' + App.fmt(sym, p.entry));
     if (state.tab === 'journal' && App.renderJournal) App.renderJournal();
+    if (App.renderRisk) App.renderRisk();
+  };
+
+  App.exposureNow = function () {
+    return state.journal.exposure(state.settings.balance);
+  };
+
+  App.canOpenNow = function (sym, riskUsd) {
+    return state.journal.canOpen(sym, {
+      balance: state.settings.balance,
+      maxAggPct: state.settings.maxAggPct,
+      maxTradesPerFamily: state.settings.maxTradesPerFamily,
+      riskUsd: riskUsd || 0
+    });
   };
 })();
