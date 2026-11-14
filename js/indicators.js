@@ -298,4 +298,3 @@
     tr: tr, atr: atr, adx: adx, bollinger: bollinger, ichimoku: ichimoku, supertrend: supertrend
   };
 }));
-                 

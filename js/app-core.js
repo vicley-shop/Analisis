@@ -266,4 +266,3 @@
     if (state.tab === 'journal' && App.renderJournal) App.renderJournal();
   };
 })();
-      
