@@ -1,19 +1,26 @@
 <!doctype html>
 <html lang="es">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="color-scheme" content="dark">
-  <meta name="theme-color" content="#0e1218">
-  <title>Analizador de mercados</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230e1218'/%3E%3Cpath d='M6 22a10 10 0 0 1 20 0' fill='none' stroke='%2326a69a' stroke-width='3' stroke-linecap='round'/%3E%3Cpath d='M16 22l5-8' stroke='%23e8ebf1' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="css/style.css">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0b0f14">
+<title>Analizador Pro</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b0f14'/%3E%3Cpath d='M6 22a10 10 0 0 1 20 0' fill='none' stroke='%2322c55e' stroke-width='3' stroke-linecap='round'/%3E%3Cpath d='M16 22l5-8' stroke='%23e5e7eb' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/style.css">
 </head>
 <body>
+
 <header class="top">
   <div class="brand">
-    <strong>Analizador</strong>
+    <strong>Analizador Pro</strong>
     <span class="status"><span class="dot" id="statusDot"></span><span id="statusText">conectando…</span></span>
+  </div>
+  <div class="risk-bar" id="riskBar">
+    <span class="risk-label">Riesgo abierto</span>
+    <div class="risk-meter"><div class="risk-fill" id="riskFill"></div></div>
+    <span class="risk-value" id="riskValue">0,00% / 2,00%</span>
+    <span class="risk-alert" id="riskAlert"></span>
   </div>
   <div class="symbols" id="symbolBar" role="tablist" aria-label="Activo"></div>
 </header>
@@ -26,6 +33,7 @@
 </nav>
 
 <main>
+
   <section id="tab-signals" class="tab active">
     <div class="card price-card">
       <div class="price-row">
@@ -33,6 +41,7 @@
         <div id="priceChg" class="price-chg"></div>
       </div>
       <div id="priceSub" class="muted small"></div>
+      <div id="sessionBadge" class="session-badge neutral">—</div>
     </div>
 
     <div class="chips" id="tfBar" role="group" aria-label="Temporalidad"></div>
@@ -57,8 +66,8 @@
         <div><span class="n buy" id="cntBuy">0</span><span class="muted small">Compra</span></div>
       </div>
       <div class="split">
-        <div><span class="muted small">Medias móviles</span><strong id="maSummary">—</strong></div>
-        <div><span class="muted small">Osciladores</span><strong id="oscSummary">—</strong></div>
+        <div><span class="muted small">Tendencia</span><strong id="maSummary">—</strong></div>
+        <div><span class="muted small">Momentum</span><strong id="oscSummary">—</strong></div>
       </div>
     </div>
 
@@ -96,7 +105,7 @@
 
     <div class="card" id="signalCard">
       <h2>Señal de entrada para MT5</h2>
-      <p class="muted small">Calcula entrada, SL y TP con ATR según el activo. Copia los valores y prográmalos en MT5.</p>
+      <p class="muted small">Calcula entrada, SL y TP usando <b>tus ajustes</b> de ATR y el ATR real de la temporalidad. La dirección forzada solo se permite si tú la eliges explícitamente.</p>
       <div class="row-btns">
         <button id="calcSignal" class="btn primary">Calcular señal</button>
         <button id="copySignal" class="btn" disabled>Copiar señal</button>
@@ -105,26 +114,40 @@
     </div>
 
     <details class="card" open>
-      <summary><h2>Medias móviles</h2></summary>
+      <summary><h2>Tendencia</h2></summary>
       <table class="tbl" id="maTable"><thead><tr><th>Indicador</th><th class="r">Valor</th><th class="r">Señal</th></tr></thead><tbody></tbody></table>
     </details>
     <details class="card" open>
-      <summary><h2>Osciladores</h2></summary>
+      <summary><h2>Momentum</h2></summary>
       <table class="tbl" id="oscTable"><thead><tr><th>Indicador</th><th class="r">Valor</th><th class="r">Señal</th></tr></thead><tbody></tbody></table>
     </details>
   </section>
 
   <section id="tab-backtest" class="tab">
     <div class="card">
-      <h2>Qué tan bien habría funcionado</h2>
+      <h2>Backtest honesto</h2>
       <p id="btInfo" class="muted small">Cargando historial…</p>
-      <div class="row-btns"><button id="btRun" class="btn primary">Recalcular</button></div>
-      <p class="muted small">Las operaciones simuladas pagan el spread, entran en la apertura de la vela siguiente y, si una vela toca stop y objetivo, cuenta el stop. «Último 30%» mide solo el tramo final del historial.</p>
+      <div class="row-btns">
+        <button id="btRun" class="btn primary">Recalcular</button>
+        <button id="btWalk" class="btn">Walk-forward</button>
+        <button id="btMC" class="btn">Monte Carlo</button>
+      </div>
+      <p class="muted small">Slippage y spread se aplican en <b>todas</b> las salidas (SL, TP, opuesta, tiempo). El capital se compone: cada operación arriesga % del balance <b>vigente</b>, no del inicial. El veredicto exige muestra ≥ 100 trades, walk-forward consistente y corrección por comparaciones múltiples.</p>
     </div>
     <div id="btCards"></div>
+    <div class="card" id="btWalkCard" hidden>
+      <h2>Walk-forward (4 ventanas)</h2>
+      <p class="muted small">Optimización en ventanas rodantes, test en la siguiente ventana. Solo las estrategias con edge <b>consistente</b> en todas las ventanas sobreviven.</p>
+      <div class="scroll-x"><table class="tbl" id="btWalkTable"></table></div>
+    </div>
+    <div class="card" id="btMCCard" hidden>
+      <h2>Monte Carlo (1000 remuestreos)</h2>
+      <p class="muted small">Remuestrea los trades reales para estimar la distribución del resultado final y la probabilidad de ruina (caída &gt; 20%).</p>
+      <div id="btMCOut" class="stat-grid"></div>
+    </div>
     <div class="card">
       <h2>Mapa por temporalidad</h2>
-      <p class="muted small">Esperanza en R (ganancia media por operación, medida en riesgos). Confía en lo que también se ve en el último 30% y en tu demo.</p>
+      <p class="muted small">Esperanza en R tras aplicar filtros de sesión y correlación. Solo se resaltan celdas con <b>n ≥ 100</b> y esperanza positiva consistente.</p>
       <div class="row-btns"><button id="btSweepBtn" class="btn">Calcular las 7 temporalidades</button></div>
       <div class="scroll-x"><table class="tbl heat" id="btSweep"></table></div>
     </div>
@@ -138,7 +161,7 @@
         <label>Estrategia<select id="jStrategy"></select></label>
         <label>Temporalidad<select id="jTf"></select></label>
       </div>
-      <p class="muted small">Solo funciona con esta página abierta. Una operación por activo a la vez; entra al ask (compra) o al bid (venta) y sale al tocar stop u objetivo.</p>
+      <p class="muted small">Límite de riesgo agregado y correlación aplicados automáticamente. Una operación por activo; se cierra al tocar stop u objetivo, o a mercado si tú lo decides.</p>
     </div>
     <div class="card"><h2>Resultado acumulado</h2><div id="jStats" class="stat-grid"></div></div>
     <div class="card"><h2>Abiertas</h2><div id="jOpen" class="list"></div></div>
@@ -155,27 +178,31 @@
     <div class="card">
       <h2>Cuenta y riesgo</h2>
       <div class="form-grid">
-        <label>Saldo de la demo (USD)<input id="sBalance" type="number" min="100" step="100" inputmode="decimal"></label>
-        <label>Riesgo por operación (%)<input id="sRisk" type="number" min="0.1" max="10" step="0.1" inputmode="decimal"></label>
+        <label>Saldo demo (USD)<input id="sBalance" type="number" min="100" step="100" inputmode="decimal"></label>
+        <label>Riesgo por operación (%)<input id="sRisk" type="number" min="0.1" max="5" step="0.1" inputmode="decimal"></label>
+        <label>Riesgo agregado máximo (%)<input id="sMaxAgg" type="number" min="0.5" max="10" step="0.5" inputmode="decimal"></label>
+        <label>Trades máx por familia (metales/forex/cripto)<input id="sMaxFam" type="number" min="1" max="5" step="1" inputmode="number"></label>
         <label>Stop (× ATR) — vacío = el de cada estrategia<input id="sSl" type="number" min="0.5" max="10" step="0.1" inputmode="decimal"></label>
         <label>Objetivo (× ATR) — vacío = el de cada estrategia<input id="sTp" type="number" min="0.5" max="20" step="0.1" inputmode="decimal"></label>
       </div>
     </div>
     <div class="card">
+      <h2>Filtros de sesión y noticias</h2>
+      <label class="check"><input type="checkbox" id="sSessionFilter"> Solo operar en sesión Londres/NY (07:00–21:00 GMT)</label>
+      <label class="check"><input type="checkbox" id="sNewsFilter"> Bloquear 30 min antes/después de noticias de alto impacto</label>
+      <label class="check"><input type="checkbox" id="sTrailing"> Usar trailing stop / break-even (1R)</label>
+      <label class="check"><input type="checkbox" id="sAdxFilter"> Filtrar tendencia con ADX ≥ 20</label>
+    </div>
+    <div class="card">
       <h2>Spread típico de tu bróker (precio)</h2>
-      <div class="form-grid">
-        <label>XAUUSD<input id="sSpreadXAUUSD" type="number" min="0" step="0.01" inputmode="decimal"></label>
-        <label>XAGUSD<input id="sSpreadXAGUSD" type="number" min="0" step="0.001" inputmode="decimal"></label>
-        <label>EURUSD<input id="sSpreadEURUSD" type="number" min="0" step="0.00001" inputmode="decimal"></label>
-        <label>BTCUSD<input id="sSpreadBTCUSD" type="number" min="0" step="0.01" inputmode="decimal"></label>
-      </div>
-      <p class="muted small">Se descuenta en cada operación del backtest. Mide el spread real de tu cuenta demo y ponlo aquí; el resultado cambia mucho con este número.</p>
+      <div class="form-grid" id="spreadGrid"></div>
+      <p class="muted small">Se descuenta en cada operación del backtest y del diario. Mide el spread real de tu demo y ponlo aquí.</p>
     </div>
     <div class="card">
       <h2>Datos</h2>
       <p class="small" id="sConn">—</p>
       <div class="scroll-x"><table class="tbl" id="sSymbols"></table></div>
-      <p class="muted small">Precios y velas: biquote.io (gratis, sin clave). Si un activo sale «sin datos», la página busca sola cómo lo llama biquote; si no lo encuentra, escribe el nombre correcto en <b>js/config.js</b> (sección <i>alias</i>). Contratos usados para calcular lotes: oro 100 oz, plata 5000 oz, euro 100 000, Bitcoin 1; confírmalos en tu bróker.</p>
+      <p class="muted small">Precios y velas: biquote.io (gratis, sin clave). Si un activo sale «sin datos», la página busca sola cómo lo llama biquote; si no lo encuentra, escribe el nombre correcto en <b>js/config.js</b> (sección <i>alias</i>).</p>
       <div class="row-btns">
         <button id="sDiagBtn" class="btn">Probar conexión</button>
         <button id="sDiagCopy" class="btn" hidden>Copiar diagnóstico</button>
@@ -184,10 +211,11 @@
       <pre id="sDiag" class="diag" hidden></pre>
     </div>
   </section>
+
 </main>
 
 <footer class="foot">
-  Herramienta de análisis con fines educativos: no es asesoría financiera ni garantiza resultados. Operar con apalancamiento puede causar pérdidas. Pruébala primero en cuenta demo.
+  Herramienta de análisis con fines educativos: no es asesoría financiera ni garantiza resultados. Operar con apalancamiento puede causar pérdidas. Pruébala primero en cuenta demo y nunca arriesgues más de lo que puedas permitirte perder.
 </footer>
 
 <script defer src="js/config.js"></script>
