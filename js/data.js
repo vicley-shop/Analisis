@@ -104,9 +104,9 @@
     XAUUSD: /gold\b.{0,12}\b(us\s+)?dollar/i,
     XAGUSD: /silver\b.{0,12}\b(us\s+)?dollar/i,
     EURUSD: /euro\b.{0,12}\b(us\s+)?dollar/i,
-    BCHUSD: /bitcoin\s*cash\b.{0,12}\b(us\s+)?dollar/i
+    BTCUSD: /bitcoin\s*cash\b.{0,12}\b(us\s+)?dollar/i
   };
-  const WORD = { XAUUSD: 'gold', XAGUSD: 'silver', EURUSD: 'euro', BCHUSD: 'bitcoin cash' };
+  const WORD = { XAUUSD: 'gold', XAGUSD: 'silver', EURUSD: 'euro', BTCUSD: 'bitcoin cash' };
 
   function searchCatalog(q) {
     return getJSON('/api/symbols/search?q=' + encodeURIComponent(q) + '&limit=50').then(function (d) {
@@ -121,7 +121,7 @@
       const name = String((it && (it.name || it.symbol)) || '').trim(), up = name.toUpperCase();
       if (!name || seen[up]) return;
       seen[up] = true;
-      // BCHUSDT / BCHUSDC (letra final en mayúscula) o descripciones con Tether / USD Coin: cotizan en otra moneda, no son el mismo activo.
+      // BTCUSDT / BTCUSDC (letra final en mayúscula) o descripciones con Tether / USD Coin: cotizan en otra moneda, no son el mismo activo.
       const rest = name.slice(sym.length);
       if (/tether|usd\s*coin/i.test(String((it && it.description) || '')) || (up.indexOf(sym) === 0 && (rest === 'T' || rest === 'C'))) return;
       let score = 0;

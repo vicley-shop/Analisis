@@ -228,7 +228,7 @@
       cell('Stop-loss', App.fmt(sym, p.sl), 'sell') + cell('Objetivo', App.fmt(sym, p.tp), 'buy') +
       cell('Relación R:R', '1 : ' + p.rr.toFixed(2)) + cell('Lotes (riesgo $' + p.riskUsd.toFixed(0) + ')', lots) +
       '<div class="msg small">Stop a ' + App.fmt(sym, p.risk) + ' del precio (' + (state.settings.sl || 1.5) + '×ATR). Ajusta saldo, riesgo y múltiplos en «Ajustes».</div>' +
-      (p.lots > 20 ? '<div class="msg small warn">Son muchos lotes: muchos brókers limitan el tamaño máximo por orden (en BCHUSD suele ser de 5 a 100). ' +
+      (p.lots > 20 ? '<div class="msg small warn">Son muchos lotes: muchos brókers limitan el tamaño máximo por orden (en BTCUSD suele ser de 5 a 100). ' +
         'Si el tuyo no lo permite, baja el riesgo en «Ajustes» o usa un stop más amplio.</div>' : '');
   };
 
