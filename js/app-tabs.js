@@ -109,7 +109,7 @@
     L.push('Cerradas: ' + st.n + ' · acierto ' + pct(st.winRate) + ' · factor de beneficio ' + pf(st.pf) + ' · esperanza ' + App.sgn(st.expectancy, 2) + ' R · neto ' +
       App.sgn(st.netR, 1) + ' R (' + usd(st.usd) + ') · caída máx. ' + st.maxDD.toFixed(1) + ' R · abiertas ' + st.open);
     L.push('Ajustes: saldo $' + s.balance + ' · riesgo ' + s.riskPct + '% · estrategia del diario ' + stName(s.journalStrategy) + ' ' + s.journalTf +
-      ' · spread XAU ' + s.spread.XAUUSD + ' / XAG ' + s.spread.XAGUSD + ' / EUR ' + s.spread.EURUSD);
+      ' · spread ' + App.SYMS.map(function (sym) { return sym.slice(0, 3) + ' ' + s.spread[sym]; }).join(' / '));
     const groups = {};
     state.journal.all().forEach(function (t) {
       if (t.status === 'closed') (groups[t.strategy + ' ' + t.symbol + ' ' + t.tf] = groups[t.strategy + ' ' + t.symbol + ' ' + t.tf] || []).push(t);
@@ -215,7 +215,7 @@
       App.SYMS.map(function (s) { return s + '→' + D.feedName(s); }).join(', '));
     const jobs = ['/api/latest?' + names.map(function (n) { return 'symbols=' + encodeURIComponent(n); }).join('&')];
     names.forEach(function (n) { jobs.push('/api/' + encodeURIComponent(n) + '/ohlc?interval=15m&limit=3'); });
-    jobs.push('/api/symbols/search?q=silver&limit=5');
+    jobs.push('/api/symbols/search?q=silver&limit=5', '/api/symbols/search?q=bitcoin%20cash&limit=5');
     let p = Promise.resolve();
     jobs.forEach(function (path) {
       p = p.then(function () { return probe(path); }).then(function (r) {
@@ -255,4 +255,3 @@
     });
   };
 })();
-                            

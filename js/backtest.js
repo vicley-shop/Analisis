@@ -14,10 +14,12 @@
   'use strict';
 
   // Datos de contrato típicos de MT5; confírmalos con tu bróker.
+  // contract = unidades por lote (1 BCH por lote en los brókers revisados); spread = en precio.
   const SYMBOLS = {
     XAUUSD: { name: 'Oro', digits: 2, contract: 100, spread: 0.30 },
     XAGUSD: { name: 'Plata', digits: 3, contract: 5000, spread: 0.03 },
-    EURUSD: { name: 'Euro / Dólar', digits: 5, contract: 100000, spread: 0.00010 }
+    EURUSD: { name: 'Euro / Dólar', digits: 5, contract: 100000, spread: 0.00010 },
+    BCHUSD: { name: 'Bitcoin Cash', digits: 2, contract: 1, spread: 0.60 }
   };
 
   const DEFAULTS = { maxBars: 100, exitOnOpposite: true, oosFrac: 0.3, spread: 0 };
@@ -121,4 +123,3 @@
 
   return { SYMBOLS: SYMBOLS, simulate: simulate, stats: stats, verdict: verdict, run: run, runAll: runAll, plan: plan };
 }));
-      
