@@ -1,8 +1,3 @@
-/*
- * strategies.js — estrategias de entrada. Cada una devuelve, para cada barra,
- * 1 (comprar), -1 (vender) o 0, usando solo datos hasta el cierre de esa barra.
- * sl / tp son los múltiplos de ATR(14) por defecto para el stop y el objetivo.
- */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory(require('./indicators.js'), require('./signals.js'));
   else { root.AT = root.AT || {}; root.AT.strategies = factory(root.AT.indicators, root.AT.signals); }
@@ -14,14 +9,42 @@
   function crossUp(a, b, i) {
     return i > 0 && a[i] != null && b[i] != null && a[i - 1] != null && b[i - 1] != null && a[i - 1] <= b[i - 1] && a[i] > b[i];
   }
+
   function crossDown(a, b, i) {
     return i > 0 && a[i] != null && b[i] != null && a[i - 1] != null && b[i - 1] != null && a[i - 1] >= b[i - 1] && a[i] < b[i];
   }
 
+  function swingHighs(h, lookback) {
+    const n = h.length, out = new Array(n).fill(null);
+    for (let i = lookback; i < n - lookback; i++) {
+      let isHigh = true;
+      for (let j = 1; j <= lookback; j++) {
+        if (h[i] <= h[i - j] || h[i] <= h[i + j]) { isHigh = false; break; }
+      }
+      if (isHigh) out[i] = h[i];
+    }
+    return out;
+  }
+
+  function swingLows(l, lookback) {
+    const n = l.length, out = new Array(n).fill(null);
+    for (let i = lookback; i < n - lookback; i++) {
+      let isLow = true;
+      for (let j = 1; j <= lookback; j++) {
+        if (l[i] >= l[i - j] || l[i] >= l[i + j]) { isLow = false; break; }
+      }
+      if (isLow) out[i] = l[i];
+    }
+    return out;
+  }
+
   const list = [
     {
-      id: 'ema_cross', name: 'Cruce EMA 9/21 con filtro EMA 200', sl: 1.5, tp: 3,
-      desc: 'Sigue tendencia: compra si la EMA 9 cruza sobre la 21 y el precio está sobre la EMA 200 (al revés para vender).',
+      id: 'ema_cross',
+      name: 'Cruce EMA 9/21 con filtro EMA 200',
+      sl: 1.5,
+      tp: 3,
+      desc: 'Sigue tendencia: compra si la EMA 9 cruza sobre la 21 y el precio está sobre la EMA 200. Venta al revés.',
       run: function (ind) {
         const k = ind.k, c = k.c, sig = new Array(k.n).fill(0);
         const f = memo(ind, 'ema9', function () { return I.ema(c, 9); });
@@ -36,8 +59,11 @@
       }
     },
     {
-      id: 'supertrend', name: 'Supertrend (10, 3)', sl: 1.5, tp: 3,
-      desc: 'Sigue tendencia: opera cada cambio de dirección del Supertrend.',
+      id: 'supertrend',
+      name: 'Supertrend (10, 3)',
+      sl: 1.5,
+      tp: 3,
+      desc: 'Sigue tendencia: opera cada cambio de dirección del Supertrend. Rendimiento sólido en BTC y oro en marcos altos.',
       run: function (ind) {
         const k = ind.k, sig = new Array(k.n).fill(0);
         const st = memo(ind, 'st', function () { return I.supertrend(k.h, k.l, k.c, 10, 3); });
@@ -50,7 +76,10 @@
       }
     },
     {
-      id: 'macd_cross', name: 'Cruce MACD con filtro EMA 200', sl: 1.5, tp: 3,
+      id: 'macd_cross',
+      name: 'Cruce MACD con filtro EMA 200',
+      sl: 1.5,
+      tp: 3,
       desc: 'Sigue tendencia: cruce de la línea MACD con su señal, solo a favor de la EMA 200.',
       run: function (ind) {
         const k = ind.k, c = k.c, sig = new Array(k.n).fill(0);
@@ -64,7 +93,10 @@
       }
     },
     {
-      id: 'rsi_rev', name: 'RSI de reversión en rango (ADX < 25)', sl: 1.5, tp: 1.5,
+      id: 'rsi_rev',
+      name: 'RSI de reversión en rango (ADX < 25)',
+      sl: 1.5,
+      tp: 1.5,
       desc: 'Reversión: compra cuando el RSI vuelve a subir de 30 y vende cuando baja de 70, solo si el mercado está lateral.',
       run: function (ind) {
         const k = ind.k, r = ind.rsi, sig = new Array(k.n).fill(0);
@@ -78,8 +110,11 @@
       }
     },
     {
-      id: 'bb_rev', name: 'Rebote en Bollinger (20, 2) en rango', sl: 1.5, tp: 1.5,
-      desc: 'Reversión: compra si el precio cierra de nuevo dentro de la banda inferior, vende en la superior; solo con ADX < 25.',
+      id: 'bb_rev',
+      name: 'Rebote en Bollinger (20, 2) en rango',
+      sl: 1.5,
+      tp: 1.5,
+      desc: 'Reversión: compra si el precio cierra de nuevo dentro de la banda inferior, vende en la superior. Solo con ADX < 25.',
       run: function (ind) {
         const k = ind.k, c = k.c, sig = new Array(k.n).fill(0);
         const bb = memo(ind, 'bb', function () { return I.bollinger(c, 20, 2); });
@@ -93,7 +128,10 @@
       }
     },
     {
-      id: 'donchian', name: 'Ruptura de canal Donchian (20)', sl: 2, tp: 4,
+      id: 'donchian',
+      name: 'Ruptura de canal Donchian (20)',
+      sl: 2,
+      tp: 4,
       desc: 'Ruptura: compra si el cierre supera el máximo de las 20 barras anteriores, vende si pierde el mínimo.',
       run: function (ind) {
         const k = ind.k, c = k.c, sig = new Array(k.n).fill(0);
@@ -108,7 +146,10 @@
       }
     },
     {
-      id: 'consenso', name: 'Consenso del medidor (±0,5)', sl: 1.5, tp: 2.5,
+      id: 'consenso',
+      name: 'Consenso del medidor (±0,5)',
+      sl: 1.5,
+      tp: 2.5,
       desc: 'Opera cuando el medidor pasa a Compra fuerte o a Venta fuerte (votan 26 indicadores).',
       run: function (ind) {
         const k = ind.k, sig = new Array(k.n).fill(0);
@@ -117,6 +158,103 @@
           if (r[i] == null || r[i - 1] == null) continue;
           if (r[i] >= 0.5 && r[i - 1] < 0.5) sig[i] = 1;
           else if (r[i] <= -0.5 && r[i - 1] > -0.5) sig[i] = -1;
+        }
+        return sig;
+      }
+    },
+    {
+      id: 'fib_pullback',
+      name: 'Retroceso Fibonacci Golden Pocket (61.8% - 65%)',
+      sl: 2,
+      tp: 3.5,
+      desc: 'Estructura de precios: espera un impulso, un retroceso al 61.8%-65% y una vela de confirmación. Ventaja documentada en los 11 mercados estudiados.',
+      run: function (ind) {
+        const k = ind.k, h = k.h, l = k.l, c = k.c, sig = new Array(k.n).fill(0);
+        const lb = 5;
+        const sh = swingHighs(h, lb);
+        const sl = swingLows(l, lb);
+        for (let i = lb * 2 + 2; i < k.n; i++) {
+          let lastHigh = null, lastHighIdx = -1;
+          let lastLow = null, lastLowIdx = -1;
+          for (let j = i - 1; j >= 0; j--) {
+            if (sh[j] != null) { lastHigh = sh[j]; lastHighIdx = j; break; }
+          }
+          for (let j = i - 1; j >= 0; j--) {
+            if (sl[j] != null) { lastLow = sl[j]; lastLowIdx = j; break; }
+          }
+          if (lastHigh == null || lastLow == null) continue;
+
+          const upMove = lastHigh > lastLow && lastHighIdx > lastLowIdx;
+          const downMove = lastHigh > lastLow && lastLowIdx > lastHighIdx;
+
+          if (upMove) {
+            const range = lastHigh - lastLow;
+            if (range <= 0) continue;
+            const goldenLow = lastHigh - range * 0.65;
+            const goldenHigh = lastHigh - range * 0.618;
+            if (l[i - 1] >= goldenLow && l[i - 1] <= goldenHigh && c[i] > c[i - 1] && c[i] > k.o[i]) {
+              sig[i] = 1;
+            }
+          } else if (downMove) {
+            const range = lastHigh - lastLow;
+            if (range <= 0) continue;
+            const goldenLow = lastLow + range * 0.618;
+            const goldenHigh = lastLow + range * 0.65;
+            if (h[i - 1] >= goldenLow && h[i - 1] <= goldenHigh && c[i] < c[i - 1] && c[i] < k.o[i]) {
+              sig[i] = -1;
+            }
+          }
+        }
+        return sig;
+      }
+    },
+    {
+      id: 'vol_pullback',
+      name: 'Pullback con expansión de volatilidad (EMA + ATR)',
+      sl: 2.5,
+      tp: 4.5,
+      desc: 'Pullback: detecta cruce EMA, espera 1-3 velas de retroceso y entra en la ruptura del canal de volatilidad. Diseñada para oro y BTC.',
+      run: function (ind) {
+        const k = ind.k, h = k.h, l = k.l, c = k.c, sig = new Array(k.n).fill(0);
+        const fast = memo(ind, 'vp_ema9', function () { return I.ema(c, 9); });
+        const slow = memo(ind, 'vp_ema21', function () { return I.ema(c, 21); });
+        const atr = ind.atr;
+
+        let state = 0;
+        let armedDir = 0, armedBar = 0, chanHi = null, chanLo = null;
+
+        for (let i = 1; i < k.n; i++) {
+          if (fast[i] == null || slow[i] == null || atr[i] == null) continue;
+
+          if (state === 0) {
+            if (crossUp(fast, slow, i)) { state = 1; armedDir = 1; armedBar = i; }
+            else if (crossDown(fast, slow, i)) { state = 1; armedDir = -1; armedBar = i; }
+            continue;
+          }
+
+          if (state === 1) {
+            if (i - armedBar > 3) { state = 0; continue; }
+            const pull = armedDir === 1 ? (c[i] < c[i - 1]) : (c[i] > c[i - 1]);
+            if (pull) {
+              chanHi = Math.max(h[i], h[i - 1]);
+              chanLo = Math.min(l[i], l[i - 1]);
+              state = 2;
+            }
+            continue;
+          }
+
+          if (state === 2) {
+            if (i - armedBar > 6) { state = 0; continue; }
+            if (armedDir === 1) {
+              chanHi = Math.max(chanHi, h[i]);
+              if (c[i] > chanHi) { sig[i] = 1; state = 0; }
+              else if (c[i] < chanLo - atr[i]) { state = 0; }
+            } else {
+              chanLo = Math.min(chanLo, l[i]);
+              if (c[i] < chanLo) { sig[i] = -1; state = 0; }
+              else if (c[i] > chanHi + atr[i]) { state = 0; }
+            }
+          }
         }
         return sig;
       }

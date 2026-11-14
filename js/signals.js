@@ -1,9 +1,3 @@
-/*
- * signals.js — medidor de señales estilo TradingView.
- * Cada indicador vota COMPRA / VENTA / NEUTRAL; el resultado se resume en
- * una puntuación entre -1 y +1 (medias móviles y osciladores pesan igual).
- * Las reglas de voto son propias, inspiradas en ese tipo de medidores.
- */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory(require('./indicators.js'));
   else { root.AT = root.AT || {}; root.AT.signals = factory(root.AT.indicators); }
@@ -12,7 +6,6 @@
 
   const BUY = 1, SELL = -1, NEUTRAL = 0;
 
-  // bars: [{t,o,h,l,c,v}] de la más antigua a la más reciente.
   function cols(bars) {
     const n = bars.length;
     const k = { o: new Array(n), h: new Array(n), l: new Array(n), c: new Array(n), v: new Array(n), t: new Array(n), n: n };
@@ -23,7 +16,6 @@
     return k;
   }
 
-  // Calcula todos los indicadores una sola vez para poder evaluarlos en cualquier barra.
   function compute(bars) {
     const k = cols(bars), h = k.h, l = k.l, c = k.c;
     const ind = { k: k, maList: [], x: {} };
@@ -123,7 +115,6 @@
     return { key: 'strong_sell', text: 'Venta fuerte', dir: -1 };
   }
 
-  // Resumen del medidor en la barra i.
   function summaryAt(ind, i) {
     const m = maVotes(ind, i), o = oscVotes(ind, i);
     const tm = tally(m), to = tally(o), all = tally(m.concat(o));
@@ -150,7 +141,6 @@
     return s;
   }
 
-  // Puntuación del medidor en cada barra (null mientras falten datos).
   function ratingSeries(ind, warmup) {
     const n = ind.k.n, out = new Array(n).fill(null);
     for (let i = Math.max(1, warmup || 0); i < n; i++) out[i] = summaryAt(ind, i).score;

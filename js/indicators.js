@@ -1,9 +1,3 @@
-/*
- * indicators.js — indicadores técnicos como funciones puras.
- * Cada función recibe arrays y devuelve arrays de la misma longitud,
- * con null donde todavía no hay datos suficientes.
- * Funciona en el navegador (window.AT.indicators) y en Node (require).
- */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
   else { root.AT = root.AT || {}; root.AT.indicators = factory(); }
@@ -19,8 +13,6 @@
 
   function last(a, k) { return a[a.length - 1 - (k || 0)]; }
 
-  /* ---------- medias móviles ---------- */
-
   function sma(v, p) {
     const n = v.length, out = nulls(n), s = firstValid(v);
     if (s < 0 || n - s < p) return out;
@@ -33,7 +25,6 @@
     return out;
   }
 
-  // Suavizado exponencial con semilla = SMA de los primeros p valores.
   function smooth(v, p, alpha) {
     const n = v.length, out = nulls(n), s = firstValid(v);
     if (s < 0 || n - s < p) return out;
@@ -49,7 +40,8 @@
   }
 
   function ema(v, p) { return smooth(v, p, 2 / (p + 1)); }
-  function rma(v, p) { return smooth(v, p, 1 / p); } // suavizado de Wilder
+
+  function rma(v, p) { return smooth(v, p, 1 / p); }
 
   function wma(v, p) {
     const n = v.length, out = nulls(n), s = firstValid(v);
@@ -71,7 +63,6 @@
     return wma(diff, sq);
   }
 
-  // Media ponderada por volumen. En forex/CFD se usa tickVolume como volumen.
   function vwma(c, vol, p) {
     p = p || 20;
     const n = c.length, out = nulls(n), plain = sma(c, p);
@@ -102,8 +93,6 @@
     }
     return out;
   }
-
-  /* ---------- osciladores ---------- */
 
   function rsi(c, p) {
     p = p || 14;
@@ -211,8 +200,6 @@
     };
   }
 
-  /* ---------- volatilidad y tendencia ---------- */
-
   function tr(h, l, c) {
     const out = new Array(c.length);
     out[0] = h[0] - l[0];
@@ -265,7 +252,6 @@
     return { tenkan: line(9), kijun: line(26) };
   }
 
-  // dir: 1 = tendencia alcista (línea bajo el precio), -1 = bajista.
   function supertrend(h, l, c, p, mult) {
     p = p || 10; mult = mult || 3;
     const a = atr(h, l, c, p), n = c.length, line = nulls(n), dir = nulls(n);

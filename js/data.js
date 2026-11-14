@@ -1,10 +1,3 @@
-/*
- * data.js — datos de biquote.io: velas por REST y ticks en vivo (SignalR),
- * con consulta periódica como respaldo si SignalR no está disponible.
- * No necesita API key. Se configura con window.AT_CONFIG (ver js/config.js):
- *   base  — URL de la API
- *   alias — nombre propio -> nombre del símbolo en biquote (p. ej. { XAGUSD: 'XAGUSD' })
- */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory(root);
   else { root.AT = root.AT || {}; root.AT.data = factory(root); }
@@ -17,7 +10,6 @@
 
   function base() { return (G.AT_CONFIG && G.AT_CONFIG.base) || 'https://biquote.io'; }
 
-  // Nombre propio -> nombre en biquote (por si el feed llama distinto a un instrumento).
   function aliasMap() { return (G.AT_CONFIG && G.AT_CONFIG.alias) || {}; }
   function feedName(sym) { return aliasMap()[sym] || sym; }
   function internalName(name) {
@@ -42,7 +34,6 @@
     }, function (err) { if (timer) clearTimeout(timer); throw err; });
   }
 
-  // «Este símbolo no existe o no tiene datos» (distinto de una caída de red o de un límite de uso).
   function isMissing(e) { return !!e && (e.status === 404 || e.status === 400 || e.status === 410 || e.status === 422); }
 
   function normBar(b) {
@@ -51,8 +42,6 @@
     return { t: t, o: o, h: h, l: l, c: c, v: +b.tickVolume || 0, live: !!b.isOpen };
   }
 
-  // Velas de la más antigua a la más reciente (la API las manda al revés). `name` es el nombre en biquote.
-  // Sin velas = el símbolo no existe o no tiene datos: error con status 404.
   function fetchRaw(name, tf, limit) {
     const path = '/api/' + encodeURIComponent(name) + '/ohlc?interval=' + tf + '&limit=' + (limit || 500);
     return getJSON(path).then(function (d) {
@@ -64,6 +53,7 @@
       return bars.filter(function (b, i) { return i === 0 || b.t !== bars[i - 1].t; });
     });
   }
+
   function fetchBars(symbol, tf, limit) { return fetchRaw(feedName(symbol), tf, limit); }
 
   function normTick(t) {
@@ -97,16 +87,13 @@
     });
   }
 
-  /* ---------- búsqueda del nombre real de un símbolo ---------- */
-
-  // Cómo suele rotular biquote cada instrumento en la descripción («Silver vs US Dollar»).
   const HINT = {
     XAUUSD: /gold\b.{0,12}\b(us\s+)?dollar/i,
     XAGUSD: /silver\b.{0,12}\b(us\s+)?dollar/i,
     EURUSD: /euro\b.{0,12}\b(us\s+)?dollar/i,
-    BTCUSD: /bitcoin\s*cash\b.{0,12}\b(us\s+)?dollar/i
+    BTCUSD: /bitcoin\b.{0,12}\b(us\s+)?dollar/i
   };
-  const WORD = { XAUUSD: 'gold', XAGUSD: 'silver', EURUSD: 'euro', BTCUSD: 'bitcoin cash' };
+  const WORD = { XAUUSD: 'gold', XAGUSD: 'silver', EURUSD: 'euro', BTCUSD: 'bitcoin' };
 
   function searchCatalog(q) {
     return getJSON('/api/symbols/search?q=' + encodeURIComponent(q) + '&limit=50').then(function (d) {
@@ -114,19 +101,17 @@
     });
   }
 
-  // Ordena de mejor a peor los nombres del catálogo que podrían ser `sym`.
   function rankNames(sym, items) {
     const out = [], seen = {};
     items.forEach(function (it) {
       const name = String((it && (it.name || it.symbol)) || '').trim(), up = name.toUpperCase();
       if (!name || seen[up]) return;
       seen[up] = true;
-      // BTCUSDT / BTCUSDC (letra final en mayúscula) o descripciones con Tether / USD Coin: cotizan en otra moneda, no son el mismo activo.
       const rest = name.slice(sym.length);
       if (/tether|usd\s*coin/i.test(String((it && it.description) || '')) || (up.indexOf(sym) === 0 && (rest === 'T' || rest === 'C'))) return;
       let score = 0;
       if (up === sym) score = 100;
-      else if (up.indexOf(sym) === 0 && up.length - sym.length <= 4) score = 90 - (up.length - sym.length); // XAGUSD.m, XAGUSDm, XAGUSD#
+      else if (up.indexOf(sym) === 0 && up.length - sym.length <= 4) score = 90 - (up.length - sym.length);
       else if (up.indexOf(sym) >= 0) score = 60;
       else if (HINT[sym] && HINT[sym].test(String(it.description || ''))) score = 50;
       if (score) out.push({ name: name, score: score });
@@ -135,8 +120,6 @@
     return out.map(function (x) { return x.name; });
   }
 
-  // Si `sym` no responde con ese nombre, busca en el catálogo de biquote uno parecido y comprueba
-  // que tenga velas. Devuelve el nombre que funciona o null; nunca lanza error.
   function discover(sym) {
     const cur = feedName(sym).toUpperCase(), qs = [sym];
     if (WORD[sym]) qs.push(WORD[sym]);
@@ -150,9 +133,6 @@
     }).catch(function () { return null; });
   }
 
-  /* ---------- utilidades ---------- */
-
-  // Ejecuta tareas (funciones que devuelven promesas) con un máximo de concurrencia.
   function pool(tasks, limit) {
     const results = new Array(tasks.length);
     let next = 0;
@@ -167,7 +147,6 @@
     return Promise.all(ws).then(function () { return results; });
   }
 
-  // Actualiza la última vela con un precio nuevo. Devuelve 'new' si abrió una vela, 'upd' si solo la actualizó.
   function applyTick(bars, tfMs, price, ts) {
     if (!bars.length) return null;
     const last = bars[bars.length - 1];
@@ -185,11 +164,8 @@
     return 'upd';
   }
 
-  /* ---------- precios en vivo ---------- */
+  const RETRY_MS = 60000;
 
-  // handlers: { tick(t), status(modo, error), missing(simbolo), found(simbolo), loadClient() -> Promise<boolean> }
-  // modos: live | polling | reconnecting | error
-  const RETRY_MS = 60000; // un símbolo que «no existe» se deja en pausa este tiempo y se vuelve a probar
   function createFeed(symbols, handlers) {
     let conn = null, pollTimer = null, mode = 'off', backoffUntil = 0, stopped = false;
     const paused = {}, reported = {};
@@ -199,7 +175,7 @@
     function setMode(m, err) { if (m !== mode || err) { mode = m; if (handlers.status) handlers.status(m, err); } }
     function give(arr) {
       arr.forEach(function (t) {
-        if (reported[t.symbol]) { // volvió a responder un símbolo que se había dado por ausente
+        if (reported[t.symbol]) {
           delete reported[t.symbol]; delete paused[t.symbol];
           if (handlers.found) handlers.found(t.symbol);
         }
@@ -212,15 +188,12 @@
       pollTimer = setInterval(poll, ms);
     }
 
-    // Un símbolo que no existe se pausa un minuto y se avisa una sola vez; si vuelve a responder, se avisa también.
     function drop(sym) {
       const first = !reported[sym];
       paused[sym] = Date.now() + RETRY_MS; reported[sym] = true;
       if (first && handlers.missing) handlers.missing(sym);
     }
 
-    // Si un símbolo no existe, la consulta en lote puede fallar entera: se pide uno por uno y solo se
-    // pausan los que devuelvan «no existe», para que no arrastren a los demás.
     function isolate() {
       return Promise.all(active().map(function (s) {
         return fetchLatest([s]).then(function (arr) { give(arr); return { s: s, ok: true }; },
@@ -230,7 +203,6 @@
           r.forEach(function (x) { if (x.miss) drop(x.s); });
           if (mode === 'off' || mode === 'error') setMode('polling');
         } else {
-          // Ninguno responde: es más probable que falle la consulta y no cada símbolo; no se pausa nada.
           backoffUntil = Date.now() + 10000;
           if (mode !== 'live') setMode('error', (r[0] && r[0].e) || new Error('sin datos'));
         }
@@ -271,7 +243,6 @@
       start: function () {
         stopped = false;
         const client = handlers.loadClient ? handlers.loadClient().catch(function () { return false; }) : Promise.resolve(true);
-        // Los precios llegan por consulta desde el primer momento (cada 2 s); si SignalR conecta, se baja a un respaldo cada 20 s.
         const first = poll().then(function () { if (!pollTimer) startPolling(2000); });
         return Promise.all([first, client]).then(function () { return startSignalR(); })
           .then(function (ok) { if (ok) startPolling(20000); });
@@ -283,7 +254,6 @@
       },
       mode: function () { return mode; },
       missing: function () { return Object.keys(reported); },
-      // Tras encontrar el nombre correcto de un símbolo: lo reactiva y vuelve a suscribir la lista en el hub.
       resubscribe: function (sym) {
         delete paused[sym]; delete reported[sym];
         if (conn && mode === 'live') conn.invoke('Subscribe', feedList()).catch(function () { /* lo cubre la consulta periódica */ });
