@@ -4,6 +4,14 @@
   const state = App.state;
   const $ = function (id) { return document.getElementById(id); };
   const LABEL = { strong_buy: 'Compra fuerte', buy: 'Compra', neutral: 'Neutral', sell: 'Venta', strong_sell: 'Venta fuerte' };
+
+  const SIGNAL_PARAMS = {
+    XAUUSD: { sl: 1.5, tp: 2.5, bestTf: '1h', session: 'Londres/NY (13:00–17:00 GMT)' },
+    XAGUSD: { sl: 1.5, tp: 2.0, bestTf: '4h', session: 'Londres/NY (13:00–17:00 GMT)' },
+    EURUSD: { sl: 1.5, tp: 1.5, bestTf: '1h', session: 'Londres/NY (13:00–17:00 GMT)' },
+    BTCUSD: { sl: 2.0, tp: 3.0, bestTf: '4h', session: 'Londres/NY (13:00–17:00 GMT)' }
+  };
+
   let chart = null, renders = 0, tablesKey = '';
 
   App.copy = function (text) {
@@ -69,6 +77,7 @@
       App.renderPlan();
       App.renderChart();
     });
+
     $('planCopy').addEventListener('click', function () {
       const p = App.planFor(state.symbol, state.tf, state.planDir);
       if (!p || p.neutral) return;
@@ -76,28 +85,119 @@
         ' · SL ' + App.fmt(p.symbol, p.sl) + ' · TP ' + App.fmt(p.symbol, p.tp) + ' · R:R ' + p.rr.toFixed(2) +
         ' · lotes ' + p.lots.toFixed(2) + ' (riesgo $' + p.riskUsd.toFixed(0) + ')');
     });
+
     $('planLog').addEventListener('click', function () {
       const p = App.planFor(state.symbol, state.tf, state.planDir);
       if (!p || p.neutral) return;
       state.journal.open({
-        symbol: p.symbol,
-        tf: p.tf,
-        strategy: 'manual',
-        dir: p.dir,
-        entry: p.entry,
-        sl: p.sl,
-        tp: p.tp,
-        lots: p.lots,
-        source: 'manual',
-        note: 'Plan manual (medidor ' + p.tf + ')'
+        symbol: p.symbol, tf: p.tf, strategy: 'manual', dir: p.dir,
+        entry: p.entry, sl: p.sl, tp: p.tp, lots: p.lots,
+        source: 'manual', note: 'Plan manual (medidor ' + p.tf + ')'
       });
       App.toast('Registrado en el diario');
     });
+
+    $('calcSignal').addEventListener('click', App.calculateSignal);
+
+    $('copySignal').addEventListener('click', function () {
+      if (!state.lastSignal || !state.lastSignal.text) return;
+      App.copy(state.lastSignal.text);
+    });
+  };
+
+  App.calculateSignal = function () {
+    const sym = state.symbol;
+    const tf = state.tf;
+    const params = SIGNAL_PARAMS[sym];
+    const box = $('signalBox');
+    const copyBtn = $('copySignal');
+
+    const bars = state.bars[sym][tf] || [];
+    if (bars.length < 60) {
+      box.innerHTML = '<div class="msg">Faltan velas para calcular la señal. Espera a que cargue el historial.</div>';
+      copyBtn.disabled = true;
+      state.lastSignal = null;
+      return;
+    }
+
+    const closed = bars.slice(0, -1);
+    const a = AT.signals.analyze(closed);
+    if (!a || a.atr == null) {
+      box.innerHTML = '<div class="msg">No hay datos suficientes para calcular la señal.</div>';
+      copyBtn.disabled = true;
+      state.lastSignal = null;
+      return;
+    }
+
+    const dir = a.label.dir;
+    if (dir === 0) {
+      box.innerHTML = '<div class="msg">El medidor está en Neutral. No hay señal clara que programar. Espera a que salga de la zona neutral.</div>';
+      copyBtn.disabled = true;
+      state.lastSignal = null;
+      return;
+    }
+
+    const tick = state.ticks[sym];
+    const lastClosed = closed[closed.length - 1];
+    const entry = tick ? (dir === 1 ? tick.ask : tick.bid) : lastClosed.c;
+    const risk = params.sl * a.atr;
+    const reward = params.tp * a.atr;
+    const sl = entry - dir * risk;
+    const tp = entry + dir * reward;
+    const rr = reward / risk;
+    const riskUsd = state.settings.balance * state.settings.riskPct / 100;
+    const contract = B.SYMBOLS[sym].contract;
+    const lots = Math.floor(riskUsd / (risk * contract) * 100) / 100;
+
+    const digits = B.SYMBOLS[sym].digits;
+    const fmt = function (p) { return p.toFixed(digits); };
+    const dirTxt = dir === 1 ? 'COMPRA' : 'VENTA';
+
+    const text = 'SEÑAL ' + dirTxt + ' ' + sym + ' ' + tf.toUpperCase() + '\n' +
+      'Entrada: ' + fmt(entry) + '\n' +
+      'SL: ' + fmt(sl) + ' (' + risk.toFixed(digits) + ' · ' + params.sl + '×ATR)\n' +
+      'TP: ' + fmt(tp) + ' (' + reward.toFixed(digits) + ' · ' + params.tp + '×ATR)\n' +
+      'R:R 1:' + rr.toFixed(2) + '\n' +
+      'Lotes: ' + (lots >= 0.01 ? lots.toFixed(2) : '<0.01') + '\n' +
+      'Riesgo: $' + riskUsd.toFixed(0) + ' (' + state.settings.riskPct + '% de $' + state.settings.balance + ')\n' +
+      'ATR (' + tf + '): ' + fmt(a.atr);
+
+    state.lastSignal = {
+      symbol: sym, tf: tf, dir: dir, entry: entry, sl: sl, tp: tp,
+      rr: rr, lots: lots, text: text, time: Date.now()
+    };
+
+    const cell = function (k, v, cls) {
+      return '<div class="cell"><span>' + k + '</span><b class="' + (cls || '') + '">' + v + '</b></div>';
+    };
+
+    let html = cell('Dirección', dirTxt, dir === 1 ? 'buy' : 'sell') +
+      cell('Entrada', fmt(entry)) +
+      cell('Stop-Loss', fmt(sl), 'sell') +
+      cell('Take-Profit', fmt(tp), 'buy') +
+      cell('R:R', '1:' + rr.toFixed(2)) +
+      cell('Lotes', lots >= 0.01 ? lots.toFixed(2) : '<0.01') +
+      cell('Riesgo', '$' + riskUsd.toFixed(0) + ' (' + state.settings.riskPct + '%)') +
+      cell('ATR (' + tf + ')', fmt(a.atr));
+
+    if (tf !== params.bestTf) {
+      html += '<div class="msg small warn">La temporalidad recomendada para ' + sym + ' es ' + params.bestTf.toUpperCase() +
+        '. Estás en ' + tf.toUpperCase() + '. La señal sigue siendo válida pero con menor respaldo histórico.</div>';
+    }
+
+    html += '<div class="msg small">Mejor franja: ' + params.session + '. Basada en la última vela cerrada de ' + tf.toUpperCase() + '.</div>';
+
+    box.innerHTML = html;
+    copyBtn.disabled = false;
+    App.toast('Señal calculada: ' + dirTxt + ' ' + sym + ' ' + tf);
   };
 
   App.selectSymbol = function (sym) {
     state.symbol = sym;
     state.planDir = 0;
+    state.lastSignal = null;
+    $('copySignal').disabled = true;
+    $('signalBox').innerHTML = '';
     Array.prototype.forEach.call($('planDir').children, function (x, i) { x.classList.toggle('active', i === 0); });
     if (state.tab === 'backtest' && App.runBacktest) App.runBacktest();
     const need = !state.bars[sym][state.tf];
@@ -109,6 +209,9 @@
 
   App.selectTf = function (tf) {
     state.tf = tf;
+    state.lastSignal = null;
+    $('copySignal').disabled = true;
+    $('signalBox').innerHTML = '';
     if (!state.bars[state.symbol][tf]) {
       App.load(state.symbol, tf, 500).then(function () { App.renderLive(true); App.renderMTF(); }, function () { /* ya se informa en el estado */ });
     } else if (Date.now() - (state.fetchedAt[state.symbol + '|' + tf] || 0) > 60000) {
@@ -163,9 +266,7 @@
       $('priceBig').textContent = '—';
       $('priceChg').textContent = '';
       $('priceSub').textContent = sym + ' no responde con el nombre «' + D.feedName(sym) + '». ' +
-        (state.discoverFailed[sym]
-          ? 'Tampoco se halló otro nombre parecido: escríbelo en js/config.js (alias).'
-          : 'Buscando el nombre correcto…');
+        (state.discoverFailed[sym] ? 'Tampoco se halló otro nombre parecido: escríbelo en js/config.js (alias).' : 'Buscando el nombre correcto…');
       return;
     }
     const price = t ? t.mid : (bars.length ? bars[bars.length - 1].c : null);
