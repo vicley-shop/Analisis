@@ -8,6 +8,12 @@
   const TF = { '1m': 60000, '5m': 300000, '15m': 900000, '30m': 1800000, '1h': 3600000, '4h': 14400000, '1d': 86400000 };
   const TF_LIST = ['1m', '5m', '15m', '30m', '1h', '4h', '1d'];
 
+  const FETCH_TIMEOUT = 8000;
+  const POLL_MS = 2000;
+  const POLL_SLOW_MS = 20000;
+  const RETRY_MS = 60000;
+  const BACKOFF_MS = 10000;
+
   function cfg() { return G.AT_CONFIG || {}; }
   function base() { return cfg().base || 'https://biquote.io'; }
   function aliasMap() { return cfg().alias || {}; }
@@ -20,13 +26,15 @@
   }
 
   function getJSON(path, timeoutMs) {
+    const t = timeoutMs || FETCH_TIMEOUT;
     const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-    const timer = ctl ? setTimeout(function () { ctl.abort(); }, timeoutMs || 15000) : null;
+    let aborted = false;
+    const timer = ctl ? setTimeout(function () { aborted = true; ctl.abort(); }, t) : null;
     const opts = ctl ? { signal: ctl.signal, cache: 'no-store' } : { cache: 'no-store' };
     return G.fetch(base() + path, opts).then(function (r) {
       if (timer) clearTimeout(timer);
       if (!r.ok) {
-        const e = new Error('HTTP ' + r.status);
+        const e = new Error('HTTP ' + r.status + ' en ' + path);
         e.status = r.status;
         e.retryAfter = +(r.headers && r.headers.get && r.headers.get('Retry-After')) || 0;
         throw e;
@@ -34,7 +42,16 @@
       return r.json();
     }, function (err) {
       if (timer) clearTimeout(timer);
-      throw err;
+      if (aborted) {
+        const e = new Error('timeout ' + t + 'ms en ' + path);
+        e.status = 0;
+        e.timeout = true;
+        throw e;
+      }
+      const e = new Error((err && err.message) || 'error de red en ' + path);
+      e.status = 0;
+      e.network = true;
+      throw e;
     });
   }
 
@@ -181,19 +198,37 @@
     return 'upd';
   }
 
-  const RETRY_MS = 60000;
-
   function createFeed(symbols, handlers) {
-    let conn = null, pollTimer = null, mode = 'off', backoffUntil = 0, stopped = false;
-    const paused = {}, reported = {};
+    let conn = null;
+    let pollTimer = null;
+    let mode = 'off';
+    let backoffUntil = 0;
+    let stopped = false;
+    let pollInFlight = false;
+    let lastTickAt = 0;
+    let lastError = null;
+    const paused = {};
+    const reported = {};
 
     function active() {
       const now = Date.now();
       return symbols.filter(function (s) { return !(paused[s] > now); });
     }
+
     function feedList() { return active().map(feedName); }
-    function setMode(m, err) { if (m !== mode || err) { mode = m; if (handlers.status) handlers.status(m, err); } }
+
+    function setMode(m, err) {
+      if (m === mode && !err) return;
+      mode = m;
+      if (err) lastError = err;
+      if (err) console.warn('[AT feed] ' + m + ':', err.message || err);
+      else console.log('[AT feed] modo →', m);
+      if (handlers.status) handlers.status(m, err || lastError);
+    }
+
     function give(arr) {
+      if (!arr || !arr.length) return;
+      lastTickAt = Date.now();
       arr.forEach(function (t) {
         if (reported[t.symbol]) {
           delete reported[t.symbol];
@@ -203,10 +238,15 @@
         if (handlers.tick) handlers.tick(t);
       });
     }
-    function emit(raw) { const t = normTick(raw); if (t) give([t]); }
+
+    function emit(raw) {
+      const t = normTick(raw);
+      if (t) give([t]);
+    }
+
     function startPolling(ms) {
       if (pollTimer) clearInterval(pollTimer);
-      pollTimer = setInterval(poll, ms);
+      pollTimer = setInterval(function () { poll(); }, ms);
     }
 
     function drop(sym) {
@@ -225,22 +265,32 @@
       })).then(function (r) {
         if (r.some(function (x) { return x.ok; })) {
           r.forEach(function (x) { if (x.miss) drop(x.s); });
-          if (mode === 'off' || mode === 'error') setMode('polling');
+          if (mode !== 'live' && mode !== 'polling') setMode('polling');
         } else {
-          backoffUntil = Date.now() + 10000;
+          backoffUntil = Date.now() + BACKOFF_MS;
           if (mode !== 'live') setMode('error', (r[0] && r[0].e) || new Error('sin datos'));
         }
       });
     }
 
     function poll() {
-      if (stopped || Date.now() < backoffUntil || !active().length) return Promise.resolve();
+      if (stopped || pollInFlight) return Promise.resolve();
+      if (Date.now() < backoffUntil) return Promise.resolve();
+      if (!active().length) return Promise.resolve();
+      pollInFlight = true;
       return fetchLatest(active()).then(function (arr) {
+        pollInFlight = false;
         give(arr);
-        if (mode === 'off' || mode === 'error') setMode('polling');
+        if (mode === 'off' || mode === 'reconnecting') setMode('polling');
       }, function (e) {
-        if (e && e.status === 429) backoffUntil = Date.now() + (e.retryAfter || 60) * 1000;
-        else if (isMissing(e)) return isolate();
+        pollInFlight = false;
+        if (e && e.status === 429) {
+          backoffUntil = Date.now() + (e.retryAfter || 60) * 1000;
+          if (mode !== 'live') setMode('error', e);
+          return;
+        }
+        if (isMissing(e)) { isolate(); return; }
+        if (e && e.network) console.warn('[AT feed] red:', e.message);
         if (mode !== 'live') setMode('error', e);
       });
     }
@@ -251,39 +301,90 @@
         conn = new G.signalR.HubConnectionBuilder()
           .withUrl(base() + '/hubs/tick', { withCredentials: false })
           .withAutomaticReconnect().build();
+
         conn.on('ReceiveTick', emit);
-        conn.onreconnecting(function () { setMode('reconnecting'); startPolling(2000); });
-        conn.onreconnected(function () {
-          conn.invoke('Subscribe', feedList()).then(function () { setMode('live'); startPolling(20000); });
+
+        conn.onreconnecting(function () {
+          setMode('reconnecting');
+          startPolling(POLL_MS);
         });
-        conn.onclose(function () { if (!stopped) { setMode('polling'); startPolling(2000); } });
-        return conn.start()
+
+        conn.onreconnected(function () {
+          conn.invoke('Subscribe', feedList())
+            .then(function () { setMode('live'); startPolling(POLL_SLOW_MS); })
+            .catch(function () { setMode('polling'); startPolling(POLL_MS); });
+        });
+
+        conn.onclose(function () {
+          if (!stopped) {
+            setMode('polling');
+            startPolling(POLL_MS);
+          }
+        });
+
+        const startP = conn.start();
+        const timeoutP = new Promise(function (_, reject) {
+          setTimeout(function () { reject(new Error('SignalR timeout')); }, 5000);
+        });
+
+        return Promise.race([startP, timeoutP])
           .then(function () { return conn.invoke('Subscribe', feedList()); })
-          .then(function () { setMode('live'); return true; },
-                function () { try { conn.stop(); } catch (e) {} conn = null; return false; });
-      } catch (e) { conn = null; return Promise.resolve(false); }
+          .then(function () {
+            setMode('live');
+            startPolling(POLL_SLOW_MS);
+            return true;
+          }, function (err) {
+            console.warn('[AT feed] SignalR no disponible:', err && err.message);
+            try { conn.stop(); } catch (e) {}
+            conn = null;
+            return false;
+          });
+      } catch (e) {
+        console.warn('[AT feed] SignalR excepción:', e && e.message);
+        conn = null;
+        return Promise.resolve(false);
+      }
     }
 
     return {
       start: function () {
         stopped = false;
-        const client = handlers.loadClient ? handlers.loadClient().catch(function () { return false; }) : Promise.resolve(true);
-        const first = poll().then(function () { if (!pollTimer) startPolling(2000); });
-        return Promise.all([first, client])
-          .then(function () { return startSignalR(); })
-          .then(function (ok) { if (ok) startPolling(20000); });
+        setMode('polling');
+        if (!pollTimer) startPolling(POLL_MS);
+        poll();
+        const client = handlers.loadClient
+          ? handlers.loadClient().catch(function () { return false; })
+          : Promise.resolve(true);
+        return client.then(function () {
+          return startSignalR();
+        }).then(function (ok) {
+          if (ok) console.log('[AT feed] live');
+          else console.log('[AT feed] polling activo');
+          return mode;
+        });
       },
       stop: function () {
         stopped = true;
-        if (pollTimer) clearInterval(pollTimer);
-        if (conn) conn.stop();
+        if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+        if (conn) { try { conn.stop(); } catch (e) {} conn = null; }
+        setMode('off');
       },
       mode: function () { return mode; },
+      lastError: function () { return lastError; },
+      lastTickAt: function () { return lastTickAt; },
       missing: function () { return Object.keys(reported); },
       resubscribe: function (sym) {
         delete paused[sym];
         delete reported[sym];
         if (conn && mode === 'live') conn.invoke('Subscribe', feedList()).catch(function () {});
+      },
+      reconnect: function () {
+        stopped = true;
+        if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+        if (conn) { try { conn.stop(); } catch (e) {} conn = null; }
+        backoffUntil = 0;
+        pollInFlight = false;
+        this.start();
       }
     };
   }
