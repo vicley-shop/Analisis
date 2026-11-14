@@ -26,7 +26,6 @@
 </nav>
 
 <main>
-  <!-- ============ SEÑALES ============ -->
   <section id="tab-signals" class="tab active">
     <div class="card price-card">
       <div class="price-row">
@@ -105,24 +104,22 @@
     </details>
   </section>
 
-  <!-- ============ BACKTEST ============ -->
   <section id="tab-backtest" class="tab">
     <div class="card">
       <h2>Qué tan bien habría funcionado</h2>
       <p id="btInfo" class="muted small">Cargando historial…</p>
       <div class="row-btns"><button id="btRun" class="btn primary">Recalcular</button></div>
-      <p class="muted small">Las operaciones simuladas pagan el spread, entran en la apertura de la vela siguiente y, si una vela toca stop y objetivo, cuenta el stop. «Último 30%» mide solo el tramo final del historial, que es el más parecido a lo que vendrá.</p>
+      <p class="muted small">Las operaciones simuladas pagan el spread, entran en la apertura de la vela siguiente y, si una vela toca stop y objetivo, cuenta el stop. «Último 30%» mide solo el tramo final del historial.</p>
     </div>
     <div id="btCards"></div>
     <div class="card">
       <h2>Mapa por temporalidad</h2>
-      <p class="muted small">Esperanza en R (ganancia media por operación, medida en riesgos). Con tantas combinaciones, alguna saldrá bien solo por azar: confía en lo que también se ve en el último 30% y en tu demo.</p>
+      <p class="muted small">Esperanza en R (ganancia media por operación, medida en riesgos). Confía en lo que también se ve en el último 30% y en tu demo.</p>
       <div class="row-btns"><button id="btSweepBtn" class="btn">Calcular las 7 temporalidades</button></div>
       <div class="scroll-x"><table class="tbl heat" id="btSweep"></table></div>
     </div>
   </section>
 
-  <!-- ============ DIARIO ============ -->
   <section id="tab-journal" class="tab">
     <div class="card">
       <h2>Registro automático (demo)</h2>
@@ -144,7 +141,6 @@
     </div>
   </section>
 
-  <!-- ============ AJUSTES ============ -->
   <section id="tab-settings" class="tab">
     <div class="card">
       <h2>Cuenta y riesgo</h2>
@@ -161,7 +157,7 @@
         <label>XAUUSD<input id="sSpreadXAUUSD" type="number" min="0" step="0.01" inputmode="decimal"></label>
         <label>XAGUSD<input id="sSpreadXAGUSD" type="number" min="0" step="0.001" inputmode="decimal"></label>
         <label>EURUSD<input id="sSpreadEURUSD" type="number" min="0" step="0.00001" inputmode="decimal"></label>
-        <label>BCHUSD<input id="sSpreadBCHUSD" type="number" min="0" step="0.01" inputmode="decimal"></label>
+        <label>BTCUSD<input id="sSpreadBTCUSD" type="number" min="0" step="0.01" inputmode="decimal"></label>
       </div>
       <p class="muted small">Se descuenta en cada operación del backtest. Mide el spread real de tu cuenta demo y ponlo aquí; el resultado cambia mucho con este número.</p>
     </div>
@@ -169,7 +165,7 @@
       <h2>Datos</h2>
       <p class="small" id="sConn">—</p>
       <div class="scroll-x"><table class="tbl" id="sSymbols"></table></div>
-      <p class="muted small">Precios y velas: biquote.io (gratis, sin clave). Si un activo sale «sin datos», la página busca sola cómo lo llama biquote; si no lo encuentra, escribe el nombre correcto en <b>js/config.js</b> (sección <i>alias</i>). Contratos usados para calcular lotes: oro 100 oz, plata 5000 oz, euro 100 000, Bitcoin Cash 1 BCH; confírmalos en tu bróker.</p>
+      <p class="muted small">Precios y velas: biquote.io (gratis, sin clave). Si un activo sale «sin datos», la página busca sola cómo lo llama biquote; si no lo encuentra, escribe el nombre correcto en <b>js/config.js</b> (sección <i>alias</i>). Contratos usados para calcular lotes: oro 100 oz, plata 5000 oz, euro 100 000, Bitcoin 1; confírmalos en tu bróker.</p>
       <div class="row-btns">
         <button id="sDiagBtn" class="btn">Probar conexión</button>
         <button id="sDiagCopy" class="btn" hidden>Copiar diagnóstico</button>
