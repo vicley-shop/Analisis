@@ -94,6 +94,16 @@
       </div>
     </div>
 
+    <div class="card" id="signalCard">
+      <h2>Señal de entrada para MT5</h2>
+      <p class="muted small">Calcula entrada, SL y TP con ATR según el activo. Copia los valores y prográmalos en MT5.</p>
+      <div class="row-btns">
+        <button id="calcSignal" class="btn primary">Calcular señal</button>
+        <button id="copySignal" class="btn" disabled>Copiar señal</button>
+      </div>
+      <div id="signalBox" class="plan"></div>
+    </div>
+
     <details class="card" open>
       <summary><h2>Medias móviles</h2></summary>
       <table class="tbl" id="maTable"><thead><tr><th>Indicador</th><th class="r">Valor</th><th class="r">Señal</th></tr></thead><tbody></tbody></table>
