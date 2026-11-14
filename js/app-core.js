@@ -5,7 +5,17 @@
   const SYMS = Object.keys(B.SYMBOLS);
   const SETTINGS_KEY = 'at.settings.v2';
 
-  const DEFAULTS = { balance: 10000, riskPct: 1, sl: null, tp: null, spread: {}, auto: true, journalTf: '15m', journalStrategy: 'consenso' };
+  const DEFAULTS = {
+    balance: 10000,
+    riskPct: 1,
+    sl: null,
+    tp: null,
+    spread: {},
+    auto: true,
+    journalTf: '15m',
+    journalStrategy: 'consenso'
+  };
+
   SYMS.forEach(function (s) { DEFAULTS.spread[s] = B.SYMBOLS[s].spread; });
 
   function pickStorage() {
@@ -14,13 +24,20 @@
       s.setItem('__at', '1');
       s.removeItem('__at');
       return s;
-    } catch (e) { return J.memoryStorage(); }
+    } catch (e) {
+      return J.memoryStorage();
+    }
   }
+
   const store = pickStorage();
 
   function loadSettings() {
     let s = {};
-    try { s = JSON.parse(store.getItem(SETTINGS_KEY)) || {}; } catch (e) { s = {}; }
+    try {
+      s = JSON.parse(store.getItem(SETTINGS_KEY)) || {};
+    } catch (e) {
+      s = {};
+    }
     const out = Object.assign({}, DEFAULTS, s);
     out.spread = Object.assign({}, DEFAULTS.spread, s.spread || {});
     if (!ST.byId[out.journalStrategy]) out.journalStrategy = DEFAULTS.journalStrategy;
@@ -31,8 +48,14 @@
   const ALIAS_KEY = 'at.alias.v2';
   const cfg = window.AT_CONFIG = window.AT_CONFIG || {};
   cfg.alias = cfg.alias || {};
+
   let savedAlias = {};
-  try { savedAlias = JSON.parse(store.getItem(ALIAS_KEY)) || {}; } catch (e) { savedAlias = {}; }
+  try {
+    savedAlias = JSON.parse(store.getItem(ALIAS_KEY)) || {};
+  } catch (e) {
+    savedAlias = {};
+  }
+
   SYMS.forEach(function (s) {
     if ((!cfg.alias[s] || cfg.alias[s] === s) && typeof savedAlias[s] === 'string' && savedAlias[s]) {
       cfg.alias[s] = savedAlias[s];
@@ -40,17 +63,32 @@
   });
 
   const state = App.state = {
-    symbol: 'XAUUSD', tf: '15m', tab: 'signals', planDir: 0,
-    bars: {}, ticks: {}, loading: {}, fetchedAt: {}, aCache: {}, hist: {},
-    feedMode: 'off', lastError: null, unavailable: {}, discoverTried: {}, discoverFailed: {}, missingAt: {},
-    settings: loadSettings(), journal: J.create(store)
+    symbol: 'XAUUSD',
+    tf: '15m',
+    tab: 'signals',
+    planDir: 0,
+    bars: {},
+    ticks: {},
+    loading: {},
+    fetchedAt: {},
+    aCache: {},
+    hist: {},
+    feedMode: 'off',
+    lastError: null,
+    unavailable: {},
+    discoverTried: {},
+    discoverFailed: {},
+    missingAt: {},
+    settings: loadSettings(),
+    journal: J.create(store)
   };
+
   SYMS.forEach(function (s) { state.bars[s] = {}; });
 
   App.SYMS = SYMS;
   App.defaults = function () { return JSON.parse(JSON.stringify(DEFAULTS)); };
   App.saveSettings = function () {
-    try { store.setItem(SETTINGS_KEY, JSON.stringify(state.settings)); } catch (e) {}
+    try { store.setItem(SETTINGS_KEY, JSON.stringify(state.settings)); } catch (e) { /* sin almacenamiento */ }
   };
 
   App.esc = function (s) {
@@ -58,11 +96,19 @@
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
     });
   };
-  App.fmt = function (sym, p) { return p == null || !isFinite(p) ? '—' : p.toFixed(B.SYMBOLS[sym].digits); };
-  App.sgn = function (x, d) { return (x >= 0 ? '+' : '') + x.toFixed(d); };
-  App.fmtDate = function (ms) {
-    return new Date(ms).toLocaleString('es', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
+
+  App.fmt = function (sym, p) {
+    return p == null || !isFinite(p) ? '—' : p.toFixed(B.SYMBOLS[sym].digits);
   };
+
+  App.sgn = function (x, d) { return (x >= 0 ? '+' : '') + x.toFixed(d); };
+
+  App.fmtDate = function (ms) {
+    return new Date(ms).toLocaleString('es', {
+      day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false
+    });
+  };
+
   App.toast = function (msg) {
     let el = document.getElementById('toast');
     if (!el) {
@@ -89,8 +135,12 @@
       return bars;
     }, function (e) {
       state.loading[key] = null;
-      if (D.isMissing(e)) { state.missingAt[sym] = Date.now(); App.markMissing(sym); }
-      else state.lastError = e;
+      if (D.isMissing(e)) {
+        state.missingAt[sym] = Date.now();
+        App.markMissing(sym);
+      } else {
+        state.lastError = e;
+      }
       if (App.renderStatus) App.renderStatus();
       throw e;
     });
@@ -99,15 +149,14 @@
   };
 
   App.loadSymbol = function (sym) {
-    const hasActive = state.bars[sym][state.tf] && state.bars[sym][state.tf].length > 0;
-    const first = hasActive ? Promise.resolve() : App.load(sym, state.tf, 500).catch(function () { return null; });
-    return first.then(function () {
+    return App.load(sym, state.tf, 500).then(function () { return true; }, function (e) {
+      return !D.isMissing(e);
+    }).then(function (go) {
+      if (!go) return null;
       const rest = D.TF_LIST.filter(function (tf) {
-        return tf !== state.tf &&
-          (!state.bars[sym][tf] || !state.bars[sym][tf].length) &&
-          !state.loading[sym + '|' + tf];
+        return tf !== state.tf && !state.bars[sym][tf];
       }).map(function (tf) {
-        return function () { return App.load(sym, tf, 500).catch(function () { return null; }); };
+        return function () { return App.load(sym, tf, 500); };
       });
       return D.pool(rest, 2);
     });
@@ -132,12 +181,15 @@
       }
       cfg.alias[sym] = name;
       savedAlias[sym] = name;
-      try { store.setItem(ALIAS_KEY, JSON.stringify(savedAlias)); } catch (e) {}
+      try { store.setItem(ALIAS_KEY, JSON.stringify(savedAlias)); } catch (e) { /* sin almacenamiento */ }
       delete state.unavailable[sym];
       if (App.feed) App.feed.resubscribe(sym);
       App.toast(sym + ' se llama «' + name + '». Cargando…');
       const again = sym === state.symbol ? App.loadSymbol(sym) : App.load(sym, state.settings.journalTf, 500);
-      again.then(function () { App.renderLive(true); App.renderMTF(); }, function () {});
+      again.then(function () {
+        App.renderLive(true);
+        App.renderMTF();
+      }, function () { /* ya se informa */ });
     });
   };
 
@@ -148,7 +200,7 @@
     if (App.renderSymbolStatus) App.renderSymbolStatus();
     if (!state.bars[sym][state.tf] && !state.loading[sym + '|' + state.tf]) {
       (sym === state.symbol ? App.loadSymbol(sym) : App.load(sym, state.settings.journalTf, 500))
-        .then(function () { App.renderLive(true); App.renderMTF(); }, function () {});
+        .then(function () { App.renderLive(true); App.renderMTF(); }, function () { /* ya se informa */ });
     }
     App.scheduleRender();
   };
@@ -176,7 +228,9 @@
       if (App.isMissing(s) && Date.now() - (state.missingAt[s] || 0) < 300000) return;
       tasks.push(function () { return App.load(s, state.settings.journalTf, 500); });
     });
-    return D.pool(tasks, 3).then(function () { SYMS.forEach(App.checkAuto); });
+    return D.pool(tasks, 3).then(function () {
+      SYMS.forEach(App.checkAuto);
+    });
   };
 
   App.analysis = function (sym, tf) {
@@ -197,7 +251,10 @@
     const per = state.bars[t.symbol];
     if (!per) return;
     state.ticks[t.symbol] = t;
-    if (t.state === 'closed' || t.stale) { App.scheduleRender(); return; }
+    if (t.state === 'closed' || t.stale) {
+      App.scheduleRender();
+      return;
+    }
     let newJournalBar = false;
     Object.keys(per).forEach(function (tf) {
       const bars = per[tf];
@@ -236,10 +293,15 @@
     const tick = state.ticks[sym];
     const entry = tick ? (dir === 1 ? tick.ask : tick.bid) : a.price;
     const p = B.plan(dir, entry, a.atr, {
-      slMult: s.sl || 1.5, tpMult: s.tp || 2.5,
-      balance: s.balance, riskPct: s.riskPct, contract: B.SYMBOLS[sym].contract
+      slMult: s.sl || 1.5,
+      tpMult: s.tp || 2.5,
+      balance: s.balance,
+      riskPct: s.riskPct,
+      contract: B.SYMBOLS[sym].contract
     });
-    p.symbol = sym; p.tf = tf; p.a = a;
+    p.symbol = sym;
+    p.tf = tf;
+    p.a = a;
     return p;
   };
 
@@ -268,12 +330,23 @@
     const st = ST.byId[s.journalStrategy], tick = state.ticks[sym];
     const entry = tick ? (sig.dir === 1 ? tick.ask : tick.bid) : sig.price;
     const p = B.plan(sig.dir, entry, sig.atr, {
-      slMult: s.sl || st.sl, tpMult: s.tp || st.tp,
-      balance: s.balance, riskPct: s.riskPct, contract: B.SYMBOLS[sym].contract
+      slMult: s.sl || st.sl,
+      tpMult: s.tp || st.tp,
+      balance: s.balance,
+      riskPct: s.riskPct,
+      contract: B.SYMBOLS[sym].contract
     });
     state.journal.open({
-      symbol: sym, tf: s.journalTf, strategy: s.journalStrategy, dir: sig.dir,
-      entry: p.entry, sl: p.sl, tp: p.tp, lots: p.lots, source: 'auto', note: st.name
+      symbol: sym,
+      tf: s.journalTf,
+      strategy: s.journalStrategy,
+      dir: sig.dir,
+      entry: p.entry,
+      sl: p.sl,
+      tp: p.tp,
+      lots: p.lots,
+      source: 'auto',
+      note: st.name
     });
     App.toast('Nueva señal: ' + (sig.dir === 1 ? 'COMPRA ' : 'VENTA ') + sym + ' @ ' + App.fmt(sym, p.entry));
     if (state.tab === 'journal' && App.renderJournal) App.renderJournal();

@@ -100,20 +100,19 @@
     state.planDir = 0;
     Array.prototype.forEach.call($('planDir').children, function (x, i) { x.classList.toggle('active', i === 0); });
     if (state.tab === 'backtest' && App.runBacktest) App.runBacktest();
+    const need = !state.bars[sym][state.tf];
+    if (need) App.loadSymbol(sym).then(function () { App.renderLive(true); App.renderMTF(); });
+    else App.refresh(false);
     App.renderLive(true);
     App.renderMTF();
-    App.loadSymbol(sym).then(function () {
-      App.renderLive(true);
-      App.renderMTF();
-    }, function () {});
   };
 
   App.selectTf = function (tf) {
     state.tf = tf;
     if (!state.bars[state.symbol][tf]) {
-      App.load(state.symbol, tf, 500).then(function () { App.renderLive(true); App.renderMTF(); }, function () {});
+      App.load(state.symbol, tf, 500).then(function () { App.renderLive(true); App.renderMTF(); }, function () { /* ya se informa en el estado */ });
     } else if (Date.now() - (state.fetchedAt[state.symbol + '|' + tf] || 0) > 60000) {
-      App.load(state.symbol, tf, 500).catch(function () {});
+      App.load(state.symbol, tf, 500).catch(function () { /* idem */ });
     }
     if (state.tab === 'backtest' && App.runBacktest) App.runBacktest();
     App.renderLive(true);
@@ -221,16 +220,10 @@
     let html = '';
     D.TF_LIST.forEach(function (tf) {
       const a = App.analysis(state.symbol, tf);
-      const loading = !!state.loading[state.symbol + '|' + tf];
-      const missing = App.isMissing(state.symbol);
-      let txt, cls;
-      if (a) { txt = LABEL[a.label.key]; cls = a.label.key; }
-      else if (loading) { txt = 'cargando…'; cls = 'neutral'; }
-      else if (missing) { txt = '—'; cls = 'neutral'; }
-      else { txt = '…'; cls = 'neutral'; }
       html += '<button data-tf="' + tf + '" class="' + (tf === state.tf ? 'active' : '') + '">' +
         '<span class="tfn">' + tf + '</span>' +
-        '<span class="lab ' + cls + '">' + txt + '</span></button>';
+        '<span class="lab ' + (a ? a.label.key : 'neutral') + '">' +
+        (a ? LABEL[a.label.key] : App.isMissing(state.symbol) ? '—' : '…') + '</span></button>';
     });
     $('mtf').innerHTML = html;
   };
