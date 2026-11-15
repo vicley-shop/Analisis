@@ -1,633 +1,120 @@
-
 <!doctype html>
 <html lang="es">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-
   <meta name="color-scheme" content="dark">
   <meta name="theme-color" content="#0b0f14">
-  <meta name="application-name" content="Trading Intelligence PRO">
-  <meta name="description" content="Analizador profesional de XAUUSD, XAGUSD, EURUSD y BTCUSD. Análisis técnico, señales, gestión de riesgo y backtesting.">
-  <meta name="referrer" content="strict-origin-when-cross-origin">
-
-  <title>Trading Intelligence PRO</title>
-
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b0f14'/%3E%3Cpath d='M6 22a10 10 0 0 1 20 0' fill='none' stroke='%2322c55e' stroke-width='3' stroke-linecap='round'/%3E%3Cpath d='M16 22l5-8' stroke='%23e5e7eb' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E">
-
-  <link rel="stylesheet" href="css/style.css">
-
+  <title>Market Consensus PRO</title>
+  <link rel="stylesheet" href="style.css">
   <style>
-    .skip-link {
-      position: absolute;
-      top: -100px;
-      left: 10px;
-      z-index: 9999;
-      padding: 12px;
-      background: #22c55e;
-      color: #06110a;
-      border-radius: 8px;
-      font-weight: 700;
-    }
-
-    .skip-link:focus {
-      top: 10px;
-    }
-
-    button:focus-visible,
-    input:focus-visible,
-    select:focus-visible,
-    a:focus-visible {
-      outline: 2px solid #22c55e;
-      outline-offset: 3px;
-    }
-
-    [hidden] {
-      display: none !important;
-    }
+    .skip-link { position: absolute; top: -100px; left: 10px; z-index: 9999; padding: 12px; background: #22c55e; color: #06110a; border-radius: 8px; font-weight: 700; }
+    .skip-link:focus { top: 10px; }
+    button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid #22c55e; outline-offset: 3px; }
+    [hidden] { display: none !important; }
   </style>
 </head>
-
 <body>
 
 <a class="skip-link" href="#mainContent">Saltar al contenido</a>
 
 <header class="top">
-
   <div class="brand">
-    <strong>Trading Intelligence PRO</strong>
-
+    <strong>Market Consensus PRO</strong>
     <span class="status">
       <span class="dot" id="statusDot"></span>
       <span id="statusText" role="status" aria-live="polite">Conectando…</span>
     </span>
   </div>
-
-  <div class="risk-bar" id="riskBar">
-    <span class="risk-label">Riesgo abierto</span>
-
-    <div class="risk-meter" role="progressbar"
-         aria-label="Riesgo agregado abierto"
-         aria-valuemin="0"
-         aria-valuemax="2"
-         aria-valuenow="0"
-         id="riskMeter">
-      <div class="risk-fill" id="riskFill"></div>
-    </div>
-
-    <span class="risk-value" id="riskValue">0,00% / 2,00%</span>
-    <span class="risk-alert" id="riskAlert" role="alert"></span>
-  </div>
-
-  <div class="symbols"
-       id="symbolBar"
-       role="tablist"
-       aria-label="Seleccionar mercado">
-  </div>
-
+  <div class="symbols" id="symbolBar" role="tablist" aria-label="Seleccionar mercado"></div>
 </header>
-
-<nav class="tabs" id="tabs" role="tablist" aria-label="Secciones">
-
-  <button role="tab" data-tab="signals"
-          class="active" aria-selected="true">
-    Señales
-  </button>
-
-  <button role="tab" data-tab="backtest"
-          aria-selected="false">
-    Backtest
-  </button>
-
-  <button role="tab" data-tab="journal"
-          aria-selected="false">
-    Diario
-  </button>
-
-  <button role="tab" data-tab="settings"
-          aria-selected="false">
-    Ajustes
-  </button>
-
-</nav>
 
 <main id="mainContent">
 
-  <!-- SEÑALES -->
+  <div class="card price-card">
+    <div class="price-row">
+      <div id="priceBig" class="price-big">—</div>
+      <div id="priceChg" class="price-chg"></div>
+    </div>
+    <div id="priceSub" class="muted small"></div>
+    <div id="sessionBadge" class="session-badge neutral">—</div>
+  </div>
 
-  <section id="tab-signals" class="tab active"
-           aria-label="Análisis y señales">
+  <div class="card gauge-card">
+    <h2>Consenso Multi-Temporal</h2>
+    <svg id="gaugeSvg" viewBox="0 0 200 112" role="img" aria-label="Medidor de consenso">
+      <path class="g g1" d="M 20 100 A 80 80 0 0 1 35.28 52.98"/>
+      <path class="g g2" d="M 35.28 52.98 A 80 80 0 0 1 75.28 23.92"/>
+      <path class="g g3" d="M 75.28 23.92 A 80 80 0 0 1 124.72 23.92"/>
+      <path class="g g4" d="M 124.72 23.92 A 80 80 0 0 1 164.72 52.98"/>
+      <path class="g g5" d="M 164.72 52.98 A 80 80 0 0 1 180 100"/>
+      <g id="needle" transform="rotate(0 100 100)">
+        <line x1="100" y1="100" x2="100" y2="34" class="needle-line"/>
+        <circle cx="100" cy="100" r="5" class="needle-hub"/>
+      </g>
+    </svg>
+    <div id="gaugeLabel" class="gauge-label neutral">—</div>
+    <div id="gaugeScore" class="muted small center"></div>
+  </div>
 
-    <div class="card price-card">
+  <div class="metrics-grid">
+    <div class="card metric-card">
+      <span class="muted small">Tendencia Macro</span>
+      <strong id="macroTrend" class="metric-val">—</strong>
+    </div>
+    <div class="card metric-card">
+      <span class="muted small">Momentum</span>
+      <strong id="macroMomentum" class="metric-val">—</strong>
+    </div>
+    <div class="card metric-card">
+      <span class="muted small">Volatilidad</span>
+      <strong id="macroVolatility" class="metric-val">—</strong>
+    </div>
+    <div class="card metric-card">
+      <span class="muted small">Estructura</span>
+      <strong id="macroStructure" class="metric-val">—</strong>
+    </div>
+  </div>
 
-      <div class="price-row">
-        <div id="priceBig" class="price-big">—</div>
-        <div id="priceChg" class="price-chg"></div>
+  <div class="card">
+    <h2>Lectura por Temporalidad</h2>
+    <div class="mtf" id="mtf"></div>
+  </div>
+
+  <div class="card chart-card">
+    <div class="chart-head">
+      <div id="legend" class="legend muted small">&nbsp;</div>
+      <div class="chart-tools">
+        <button id="zoomOut" aria-label="Alejar">−</button>
+        <button id="zoomIn" aria-label="Acercar">+</button>
+        <button id="zoomReset" aria-label="Centrar">⟲</button>
       </div>
-
-      <div id="priceSub" class="muted small"></div>
-
-      <div id="sessionBadge" class="session-badge neutral">—</div>
-
     </div>
-
-    <div class="chips" id="tfBar"
-         role="group" aria-label="Temporalidad">
+    <canvas id="chart" aria-label="Gráfico de velas japonesas con estructura de mercado"></canvas>
+    <div class="muted small legend-ema">
+      <span class="k e1"></span> EMA 20
+      <span class="k e2"></span> EMA 50
+      <span class="k e3"></span> EMA 200
     </div>
-
-    <!-- MEDIDOR -->
-
-    <div class="card gauge-card">
-
-      <svg id="gaugeSvg"
-           viewBox="0 0 200 112"
-           role="img"
-           aria-label="Medidor de señales de compra y venta">
-
-        <path class="g g1" d="M 20 100 A 80 80 0 0 1 35.28 52.98"/>
-        <path class="g g2" d="M 35.28 52.98 A 80 80 0 0 1 75.28 23.92"/>
-        <path class="g g3" d="M 75.28 23.92 A 80 80 0 0 1 124.72 23.92"/>
-        <path class="g g4" d="M 124.72 23.92 A 80 80 0 0 1 164.72 52.98"/>
-        <path class="g g5" d="M 164.72 52.98 A 80 80 0 0 1 180 100"/>
-
-        <g id="needle" transform="rotate(0 100 100)">
-          <line x1="100" y1="100" x2="100" y2="34" class="needle-line"/>
-          <circle cx="100" cy="100" r="5" class="needle-hub"/>
-        </g>
-
-      </svg>
-
-      <div id="gaugeLabel" class="gauge-label neutral">—</div>
-      <div id="gaugeScore" class="muted small center"></div>
-
-      <div class="counts">
-
-        <div>
-          <span class="n sell" id="cntSell">0</span>
-          <span class="muted small">Venta</span>
-        </div>
-
-        <div>
-          <span class="n neutral" id="cntNeutral">0</span>
-          <span class="muted small">Neutral</span>
-        </div>
-
-        <div>
-          <span class="n buy" id="cntBuy">0</span>
-          <span class="muted small">Compra</span>
-        </div>
-
-      </div>
-
-      <div class="split">
-
-        <div>
-          <span class="muted small">Tendencia</span>
-          <strong id="maSummary">—</strong>
-        </div>
-
-        <div>
-          <span class="muted small">Momentum</span>
-          <strong id="oscSummary">—</strong>
-        </div>
-
-      </div>
-
-    </div>
-
-    <div class="card">
-      <h2>Todas las temporalidades</h2>
-      <div class="mtf" id="mtf"></div>
-    </div>
-
-    <!-- GRÁFICO -->
-
-    <div class="card chart-card">
-
-      <div class="chart-head">
-
-        <div id="legend" class="legend muted small">&nbsp;</div>
-
-        <div class="chart-tools">
-
-          <button id="zoomOut" aria-label="Alejar">−</button>
-          <button id="zoomIn" aria-label="Acercar">+</button>
-          <button id="zoomReset" aria-label="Ver las velas más recientes">⟲</button>
-
-        </div>
-
-      </div>
-
-      <canvas id="chart" aria-label="Gráfico de velas japonesas">
-        Tu navegador no admite gráficos Canvas.
-      </canvas>
-
-      <div class="muted small legend-ema">
-        <span class="k e1"></span> EMA 20
-        <span class="k e2"></span> EMA 50
-        <span class="k e3"></span> EMA 200
-      </div>
-
-    </div>
-
-    <!-- PLAN DE OPERACIÓN -->
-
-    <div class="card" id="planCard">
-
-      <h2>Plan de operación</h2>
-
-      <div class="chips small" id="planDir"
-           role="group" aria-label="Dirección del plan">
-
-        <button data-dir="0" class="active">Según medidor</button>
-        <button data-dir="1">Comprar</button>
-        <button data-dir="-1">Vender</button>
-
-      </div>
-
-      <div id="planBox" class="plan"></div>
-
-      <div class="row-btns">
-        <button id="planCopy" class="btn">Copiar plan</button>
-        <button id="planLog" class="btn primary">Registrar en diario</button>
-      </div>
-
-    </div>
-
-    <!-- SEÑAL MT5 -->
-
-    <div class="card" id="signalCard">
-
-      <h2>Señal de entrada para MT5</h2>
-
-      <p class="muted small">
-        Calcula entrada, SL y TP usando tus ajustes de ATR
-        y el ATR real de la temporalidad.
-        La dirección forzada solo se permite si tú la eliges explícitamente.
-      </p>
-
-      <div class="row-btns">
-        <button id="calcSignal" class="btn primary">Calcular señal</button>
-        <button id="copySignal" class="btn" disabled>Copiar señal</button>
-      </div>
-
-      <div id="signalBox" class="plan"></div>
-
-    </div>
-
-    <!-- INDICADORES -->
-
-    <details class="card" open>
-
-      <summary><h2>Tendencia</h2></summary>
-
-      <table class="tbl" id="maTable">
-        <thead>
-          <tr>
-            <th>Indicador</th>
-            <th class="r">Valor</th>
-            <th class="r">Señal</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
-
-    </details>
-
-    <details class="card" open>
-
-      <summary><h2>Momentum</h2></summary>
-
-      <table class="tbl" id="oscTable">
-        <thead>
-          <tr>
-            <th>Indicador</th>
-            <th class="r">Valor</th>
-            <th class="r">Señal</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
-
-    </details>
-
-  </section>
-
-  <!-- BACKTEST -->
-
-  <section id="tab-backtest" class="tab"
-           aria-label="Pruebas históricas">
-
-    <div class="card">
-
-      <h2>Backtest profesional</h2>
-
-      <p id="btInfo" class="muted small" aria-live="polite">
-        Cargando historial…
-      </p>
-
-      <div class="row-btns">
-
-        <button id="btRun" class="btn primary">Recalcular</button>
-        <button id="btWalk" class="btn">Walk-forward</button>
-        <button id="btMC" class="btn">Monte Carlo</button>
-
-      </div>
-
-      <p class="muted small">
-        Slippage y spread se aplican en todas las salidas.
-        El capital se compone y cada operación arriesga
-        un porcentaje del balance vigente.
-        Las estadísticas deben considerar el tamaño de muestra,
-        la consistencia y las comparaciones múltiples.
-      </p>
-
-    </div>
-
-    <div id="btCards"></div>
-
-    <div class="card" id="btWalkCard" hidden>
-
-      <h2>Walk-forward (4 ventanas)</h2>
-
-      <p class="muted small">
-        Optimización en ventanas rodantes y prueba en la
-        siguiente ventana.
-      </p>
-
-      <div class="scroll-x">
-        <table class="tbl" id="btWalkTable"></table>
-      </div>
-
-    </div>
-
-    <div class="card" id="btMCCard" hidden>
-
-      <h2>Monte Carlo (1000 remuestreos)</h2>
-
-      <p class="muted small">
-        Remuestreo de operaciones para estimar la distribución
-        de resultados y la probabilidad de ruina.
-      </p>
-
-      <div id="btMCOut" class="stat-grid"></div>
-
-    </div>
-
-    <div class="card">
-
-      <h2>Mapa por temporalidad</h2>
-
-      <p class="muted small">
-        Esperanza en R después de aplicar los filtros configurados.
-        Las muestras pequeñas deben identificarse por separado.
-      </p>
-
-      <div class="row-btns">
-        <button id="btSweepBtn" class="btn">
-          Calcular las 7 temporalidades
-        </button>
-      </div>
-
-      <div class="scroll-x">
-        <table class="tbl heat" id="btSweep"></table>
-      </div>
-
-    </div>
-
-  </section>
-
-  <!-- DIARIO -->
-
-  <section id="tab-journal" class="tab"
-           aria-label="Diario de operaciones">
-
-    <div class="card">
-
-      <h2>Registro automático (demo)</h2>
-
-      <label class="check">
-        <input type="checkbox" id="jAuto">
-        Abrir operaciones en papel cuando la estrategia dé señal
-      </label>
-
-      <div class="form-grid">
-
-        <label>
-          Estrategia
-          <select id="jStrategy"></select>
-        </label>
-
-        <label>
-          Temporalidad
-          <select id="jTf"></select>
-        </label>
-
-      </div>
-
-      <p class="muted small">
-        Límite de riesgo agregado y correlación aplicados
-        automáticamente. Una operación por activo.
-      </p>
-
-    </div>
-
-    <div class="card">
-      <h2>Resultado acumulado</h2>
-      <div id="jStats" class="stat-grid"></div>
-    </div>
-
-    <div class="card">
-      <h2>Abiertas</h2>
-      <div id="jOpen" class="list"></div>
-    </div>
-
-    <div class="card">
-
-      <h2>Cerradas</h2>
-
-      <div class="scroll-x">
-        <table class="tbl" id="jClosed"></table>
-      </div>
-
-    </div>
-
-    <div class="card">
-
-      <h2>Por estrategia y activo</h2>
-
-      <div class="scroll-x">
-        <table class="tbl" id="jBreakdown"></table>
-      </div>
-
-    </div>
-
-    <div class="row-btns pad">
-
-      <button id="jCopy" class="btn primary">Copiar resumen</button>
-      <button id="jCsv" class="btn">Descargar CSV</button>
-      <button id="jClear" class="btn danger">Borrar diario</button>
-
-    </div>
-
-  </section>
-
-  <!-- AJUSTES -->
-
-  <section id="tab-settings" class="tab"
-           aria-label="Configuración">
-
-    <div class="card">
-
-      <h2>Cuenta y riesgo</h2>
-
-      <div class="form-grid">
-
-        <label>
-          Saldo demo (USD)
-          <input id="sBalance" type="number"
-                 min="100" step="100" inputmode="decimal">
-        </label>
-
-        <label>
-          Riesgo por operación (%)
-          <input id="sRisk" type="number"
-                 min="0.1" max="5" step="0.1" inputmode="decimal">
-        </label>
-
-        <label>
-          Riesgo agregado máximo (%)
-          <input id="sMaxAgg" type="number"
-                 min="0.5" max="10" step="0.5" inputmode="decimal">
-        </label>
-
-        <label>
-          Trades máx por familia (metales/forex/cripto)
-          <input id="sMaxFam" type="number"
-                 min="1" max="5" step="1" inputmode="numeric">
-        </label>
-
-        <label>
-          Stop (× ATR) — vacío = el de cada estrategia
-          <input id="sSl" type="number"
-                 min="0.5" max="10" step="0.1" inputmode="decimal">
-        </label>
-
-        <label>
-          Objetivo (× ATR) — vacío = el de cada estrategia
-          <input id="sTp" type="number"
-                 min="0.5" max="20" step="0.1" inputmode="decimal">
-        </label>
-
-      </div>
-
-    </div>
-
-    <div class="card">
-
-      <h2>Filtros de sesión y noticias</h2>
-
-      <label class="check">
-        <input type="checkbox" id="sSessionFilter">
-        Solo operar en sesión Londres/NY (07:00–21:00 GMT)
-      </label>
-
-      <label class="check">
-        <input type="checkbox" id="sNewsFilter">
-        Bloquear 30 min antes/después de noticias de alto impacto
-      </label>
-
-      <label class="check">
-        <input type="checkbox" id="sTrailing">
-        Usar trailing stop / break-even (1R)
-      </label>
-
-      <label class="check">
-        <input type="checkbox" id="sAdxFilter">
-        Filtrar tendencia con ADX ≥ 20
-      </label>
-
-    </div>
-
-    <div class="card">
-
-      <h2>Spread típico de tu bróker (precio)</h2>
-
-      <div class="form-grid" id="spreadGrid"></div>
-
-      <p class="muted small">
-        Se descuenta en cada operación del backtest y del diario.
-        Configura el spread real de tu bróker para cada mercado.
-      </p>
-
-    </div>
-
-    <div class="card">
-
-      <h2>Datos del mercado</h2>
-
-      <p class="small" id="sConn">—</p>
-
-      <div class="scroll-x">
-        <table class="tbl" id="sSymbols"></table>
-      </div>
-
-      <p class="muted small">
-        Precios y velas: biquote.io.
-        Si un activo no tiene datos, revisa su alias en js/config.js.
-      </p>
-
-      <div class="row-btns">
-
-        <button id="sDiagBtn" class="btn">Probar conexión</button>
-        <button id="sDiagCopy" class="btn" hidden>Copiar diagnóstico</button>
-        <button id="sReset" class="btn danger">Restablecer ajustes</button>
-
-      </div>
-
-      <pre id="sDiag" class="diag" hidden></pre>
-
-    </div>
-
-  </section>
+  </div>
+
+  <div class="card conclusion-card">
+    <h2>Conclusión del Análisis</h2>
+    <p id="conclusionText" class="conclusion-text">Esperando datos suficientes para generar un veredicto...</p>
+  </div>
 
 </main>
 
 <footer class="foot">
-
-  Trading Intelligence PRO · Herramienta de análisis técnico.
-
-  <p>
-    Fines educativos. No constituye asesoramiento financiero
-    ni garantiza resultados. El trading con apalancamiento
-    puede causar pérdidas superiores a las esperadas.
-    Prueba primero en una cuenta demo.
-  </p>
-
+  Market Consensus PRO · Análisis técnico institucional.
+  <p>Fines educativos. No constituye asesoramiento financiero.</p>
 </footer>
-
-<noscript>
-  <div class="card">
-    JavaScript está deshabilitado. Actívalo para utilizar
-    el analizador y sus herramientas.
-  </div>
-</noscript>
-
-<!-- MÓDULOS PRINCIPALES -->
 
 <script defer src="js/config.js"></script>
 <script defer src="js/indicators.js"></script>
-<script defer src="js/signals.js"></script>
-<script defer src="js/strategies.js"></script>
-<script defer src="js/backtest.js"></script>
 <script defer src="js/data.js"></script>
-<script defer src="js/journal.js"></script>
+<script defer src="js/analysis.js"></script>
 <script defer src="js/chart.js"></script>
-<script defer src="js/app-core.js"></script>
-<script defer src="js/app-signals.js"></script>
-<script defer src="js/app-backtest.js"></script>
-<script defer src="js/app-tabs.js"></script>
-<script defer src="js/main.js"></script>
-
+<script defer src="js/app.js"></script>
 </body>
 </html>
