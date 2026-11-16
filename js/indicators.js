@@ -4,245 +4,175 @@
 }(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  function nulls(n) { return new Array(n).fill(null); }
+  function nulls(n) {
+    return new Array(n).fill(null);
+  }
 
-  function firstValid(v) {
-    for (let i = 0; i < v.length; i++) if (v[i] != null && !isNaN(v[i])) return i;
+  function firstValid(values) {
+    for (let i = 0; i < values.length; i++) {
+      const v = values[i];
+      if (v != null && Number.isFinite(v)) return i;
+    }
     return -1;
   }
 
-  function last(a, k) { return a[a.length - 1 - (k || 0)]; }
+  function last(values, k) {
+    return values[values.length - 1 - (k || 0)];
+  }
 
-  function sma(v, p) {
-    const n = v.length, out = nulls(n), s = firstValid(v);
-    if (s < 0 || n - s < p) return out;
+  function sma(values, period) {
+    const n = values.length;
+    const out = nulls(n);
+    const start = firstValid(values);
+    if (start < 0 || n - start < period) return out;
     let sum = 0;
-    for (let i = s; i < n; i++) {
-      sum += v[i];
-      if (i - s >= p) sum -= v[i - p];
-      if (i - s >= p - 1) out[i] = sum / p;
+    for (let i = start; i < start + period; i++) sum += values[i];
+    out[start + period - 1] = sum / period;
+    for (let i = start + period; i < n; i++) {
+      sum += values[i] - values[i - period];
+      out[i] = sum / period;
     }
     return out;
   }
 
-  function smooth(v, p, alpha) {
-    const n = v.length, out = nulls(n), s = firstValid(v);
-    if (s < 0 || n - s < p) return out;
+  function smooth(values, period, alpha) {
+    const n = values.length;
+    const out = nulls(n);
+    const start = firstValid(values);
+    if (start < 0 || n - start < period) return out;
     let prev = 0;
-    for (let i = s; i < s + p; i++) prev += v[i];
-    prev /= p;
-    out[s + p - 1] = prev;
-    for (let i = s + p; i < n; i++) {
-      prev = alpha * v[i] + (1 - alpha) * prev;
+    for (let i = start; i < start + period; i++) prev += values[i];
+    prev /= period;
+    out[start + period - 1] = prev;
+    for (let i = start + period; i < n; i++) {
+      prev = alpha * values[i] + (1 - alpha) * prev;
       out[i] = prev;
     }
     return out;
   }
 
-  function ema(v, p) { return smooth(v, p, 2 / (p + 1)); }
-  function rma(v, p) { return smooth(v, p, 1 / p); }
-
-  function wma(v, p) {
-    const n = v.length, out = nulls(n), s = firstValid(v);
-    if (s < 0 || n - s < p) return out;
-    const den = p * (p + 1) / 2;
-    for (let i = s + p - 1; i < n; i++) {
-      let num = 0;
-      for (let j = 0; j < p; j++) num += v[i - p + 1 + j] * (j + 1);
-      out[i] = num / den;
-    }
-    return out;
+  function ema(values, period) {
+    return smooth(values, period, 2 / (period + 1));
   }
 
-  function hma(v, p) {
-    const half = Math.max(1, Math.round(p / 2));
-    const sq = Math.max(1, Math.round(Math.sqrt(p)));
-    const a = wma(v, half), b = wma(v, p);
-    const diff = v.map(function (_, i) {
-      return (a[i] == null || b[i] == null) ? null : 2 * a[i] - b[i];
-    });
-    return wma(diff, sq);
+  function rma(values, period) {
+    return smooth(values, period, 1 / period);
   }
 
-  function vwma(c, vol, p) {
-    p = p || 20;
-    const n = c.length, out = nulls(n), plain = sma(c, p);
-    for (let i = p - 1; i < n; i++) {
-      let sv = 0, sp = 0;
-      for (let j = i - p + 1; j <= i; j++) { sv += vol[j]; sp += c[j] * vol[j]; }
-      out[i] = sv > 0 ? sp / sv : plain[i];
-    }
-    return out;
+  function updateEma(previous, value, period) {
+    const k = 2 / (period + 1);
+    return value * k + previous * (1 - k);
   }
 
-  function highest(v, p) {
-    const n = v.length, out = nulls(n);
-    for (let i = p - 1; i < n; i++) {
-      let m = -Infinity;
-      for (let j = i - p + 1; j <= i; j++) if (v[j] > m) m = v[j];
-      out[i] = m;
-    }
-    return out;
+  function updateRma(previous, value, period) {
+    return (previous * (period - 1) + value) / period;
   }
 
-  function lowest(v, p) {
-    const n = v.length, out = nulls(n);
-    for (let i = p - 1; i < n; i++) {
-      let m = Infinity;
-      for (let j = i - p + 1; j <= i; j++) if (v[j] < m) m = v[j];
-      out[i] = m;
-    }
-    return out;
-  }
-
-  function rsi(c, p) {
-    p = p || 14;
-    const n = c.length, out = nulls(n);
-    if (n <= p) return out;
-    const val = function (g, l) { return l === 0 ? (g === 0 ? 50 : 100) : 100 - 100 / (1 + g / l); };
-    let g = 0, l = 0;
-    for (let i = 1; i <= p; i++) { const d = c[i] - c[i - 1]; if (d >= 0) g += d; else l -= d; }
-    g /= p; l /= p;
-    out[p] = val(g, l);
-    for (let i = p + 1; i < n; i++) {
-      const d = c[i] - c[i - 1];
-      g = (g * (p - 1) + (d > 0 ? d : 0)) / p;
-      l = (l * (p - 1) + (d < 0 ? -d : 0)) / p;
-      out[i] = val(g, l);
-    }
-    return out;
-  }
-
-  function macd(c, f, s, g) {
-    f = f || 12; s = s || 26; g = g || 9;
-    const ef = ema(c, f), es = ema(c, s);
-    const line = c.map(function (_, i) {
-      return (ef[i] == null || es[i] == null) ? null : ef[i] - es[i];
-    });
-    const sig = ema(line, g);
-    const hist = line.map(function (x, i) {
-      return (x == null || sig[i] == null) ? null : x - sig[i];
-    });
-    return { macd: line, signal: sig, hist: hist };
-  }
-
-  function stoch(h, l, c, kp, ks, dp) {
-    kp = kp || 14; ks = ks || 3; dp = dp || 3;
-    const n = c.length, hh = highest(h, kp), ll = lowest(l, kp), raw = nulls(n);
-    for (let i = kp - 1; i < n; i++) raw[i] = hh[i] === ll[i] ? 50 : 100 * (c[i] - ll[i]) / (hh[i] - ll[i]);
-    const k = sma(raw, ks);
-    return { k: k, d: sma(k, dp) };
-  }
-
-  function cci(h, l, c, p) {
-    p = p || 20;
-    const n = c.length, tp = new Array(n), out = nulls(n);
-    for (let i = 0; i < n; i++) tp[i] = (h[i] + l[i] + c[i]) / 3;
-    const m = sma(tp, p);
-    for (let i = p - 1; i < n; i++) {
-      let d = 0;
-      for (let j = i - p + 1; j <= i; j++) d += Math.abs(tp[j] - m[i]);
-      d /= p;
-      out[i] = d === 0 ? 0 : (tp[i] - m[i]) / (0.015 * d);
-    }
-    return out;
-  }
-
-  function tr(h, l, c) {
-    const out = new Array(c.length);
-    out[0] = h[0] - l[0];
-    for (let i = 1; i < c.length; i++) {
-      out[i] = Math.max(h[i] - l[i], Math.abs(h[i] - c[i - 1]), Math.abs(l[i] - c[i - 1]));
-    }
-    return out;
-  }
-
-  function atr(h, l, c, p) { return rma(tr(h, l, c), p || 14); }
-
-  function adx(h, l, c, p) {
-    p = p || 14;
-    const n = c.length, pdm = nulls(n), mdm = nulls(n), t = nulls(n);
+  function tr(highs, lows, closes) {
+    const n = closes.length;
+    const out = new Array(n);
+    if (n === 0) return out;
+    out[0] = highs[0] - lows[0];
     for (let i = 1; i < n; i++) {
-      const up = h[i] - h[i - 1], dn = l[i - 1] - l[i];
-      pdm[i] = (up > dn && up > 0) ? up : 0;
-      mdm[i] = (dn > up && dn > 0) ? dn : 0;
-      t[i] = Math.max(h[i] - l[i], Math.abs(h[i] - c[i - 1]), Math.abs(l[i] - c[i - 1]));
+      out[i] = Math.max(
+        highs[i] - lows[i],
+        Math.abs(highs[i] - closes[i - 1]),
+        Math.abs(lows[i] - closes[i - 1])
+      );
     }
-    const sp = rma(pdm, p), sm = rma(mdm, p), st = rma(t, p);
-    const pdi = nulls(n), mdi = nulls(n), dx = nulls(n);
+    return out;
+  }
+
+  function atr(highs, lows, closes, period) {
+    return rma(tr(highs, lows, closes), period || 14);
+  }
+
+  function rsi(closes, period) {
+    period = period || 14;
+    const n = closes.length;
+    const out = nulls(n);
+    if (n <= period) return out;
+
+    let gains = 0;
+    let losses = 0;
+    for (let i = 1; i <= period; i++) {
+      const change = closes[i] - closes[i - 1];
+      if (change >= 0) gains += change;
+      else losses -= change;
+    }
+    gains /= period;
+    losses /= period;
+
+    function value(g, l) {
+      if (l === 0) return g === 0 ? 50 : 100;
+      return 100 - 100 / (1 + g / l);
+    }
+
+    out[period] = value(gains, losses);
+
+    for (let i = period + 1; i < n; i++) {
+      const change = closes[i] - closes[i - 1];
+      gains = (gains * (period - 1) + (change > 0 ? change : 0)) / period;
+      losses = (losses * (period - 1) + (change < 0 ? -change : 0)) / period;
+      out[i] = value(gains, losses);
+    }
+    return out;
+  }
+
+  function adx(highs, lows, closes, period) {
+    period = period || 14;
+    const n = closes.length;
+    const plusDM = nulls(n);
+    const minusDM = nulls(n);
+    const trueRange = nulls(n);
+
+    for (let i = 1; i < n; i++) {
+      const upMove = highs[i] - highs[i - 1];
+      const downMove = lows[i - 1] - lows[i];
+      plusDM[i] = (upMove > downMove && upMove > 0) ? upMove : 0;
+      minusDM[i] = (downMove > upMove && downMove > 0) ? downMove : 0;
+      trueRange[i] = Math.max(
+        highs[i] - lows[i],
+        Math.abs(highs[i] - closes[i - 1]),
+        Math.abs(lows[i] - closes[i - 1])
+      );
+    }
+
+    const smoothedPlus = rma(plusDM, period);
+    const smoothedMinus = rma(minusDM, period);
+    const smoothedTr = rma(trueRange, period);
+
+    const plusDI = nulls(n);
+    const minusDI = nulls(n);
+    const dx = nulls(n);
+
     for (let i = 0; i < n; i++) {
-      if (st[i] == null) continue;
-      pdi[i] = st[i] === 0 ? 0 : 100 * sp[i] / st[i];
-      mdi[i] = st[i] === 0 ? 0 : 100 * sm[i] / st[i];
-      const s = pdi[i] + mdi[i];
-      dx[i] = s === 0 ? 0 : 100 * Math.abs(pdi[i] - mdi[i]) / s;
+      if (smoothedTr[i] == null || smoothedPlus[i] == null || smoothedMinus[i] == null) continue;
+      plusDI[i] = smoothedTr[i] === 0 ? 0 : (100 * smoothedPlus[i]) / smoothedTr[i];
+      minusDI[i] = smoothedTr[i] === 0 ? 0 : (100 * smoothedMinus[i]) / smoothedTr[i];
+      const sum = plusDI[i] + minusDI[i];
+      dx[i] = sum === 0 ? 0 : (100 * Math.abs(plusDI[i] - minusDI[i])) / sum;
     }
-    return { adx: rma(dx, p), pdi: pdi, mdi: mdi };
-  }
 
-  function bollinger(c, p, m) {
-    p = p || 20; m = m || 2;
-    const n = c.length, mid = sma(c, p), up = nulls(n), lo = nulls(n);
-    for (let i = p - 1; i < n; i++) {
-      let s = 0;
-      for (let j = i - p + 1; j <= i; j++) s += (c[j] - mid[i]) * (c[j] - mid[i]);
-      const sd = Math.sqrt(s / p);
-      up[i] = mid[i] + m * sd; lo[i] = mid[i] - m * sd;
-    }
-    return { mid: mid, upper: up, lower: lo };
-  }
-
-  function ichimoku(h, l) {
-    function line(p) {
-      const hh = highest(h, p), ll = lowest(l, p);
-      return hh.map(function (x, i) { return x == null ? null : (x + ll[i]) / 2; });
-    }
-    return { tenkan: line(9), kijun: line(26) };
-  }
-
-  function supertrend(h, l, c, p, mult) {
-    p = p || 10; mult = mult || 3;
-    const a = atr(h, l, c, p), n = c.length, line = nulls(n), dir = nulls(n);
-    let fu = null, fl = null, d = 1;
-    for (let i = 0; i < n; i++) {
-      if (a[i] == null) continue;
-      const mid = (h[i] + l[i]) / 2;
-      const bu = mid + mult * a[i], bl = mid - mult * a[i];
-      if (fu === null) {
-        fu = bu; fl = bl; d = c[i] >= mid ? 1 : -1;
-      } else {
-        const pfu = fu, pfl = fl;
-        fu = (bu < pfu || c[i - 1] > pfu) ? bu : pfu;
-        fl = (bl > pfl || c[i - 1] < pfl) ? bl : pfl;
-        if (d === -1 && c[i] > fu) d = 1;
-        else if (d === 1 && c[i] < fl) d = -1;
-      }
-      line[i] = d === 1 ? fl : fu;
-      dir[i] = d;
-    }
-    return { line: line, dir: dir };
+    return {
+      adx: rma(dx, period),
+      plusDI: plusDI,
+      minusDI: minusDI
+    };
   }
 
   return {
     nulls: nulls,
+    firstValid: firstValid,
     last: last,
     sma: sma,
     ema: ema,
     rma: rma,
-    wma: wma,
-    hma: hma,
-    vwma: vwma,
-    highest: highest,
-    lowest: lowest,
-    rsi: rsi,
-    macd: macd,
-    stoch: stoch,
-    cci: cci,
+    updateEma: updateEma,
+    updateRma: updateRma,
     tr: tr,
     atr: atr,
-    adx: adx,
-    bollinger: bollinger,
-    ichimoku: ichimoku,
-    supertrend: supertrend
+    rsi: rsi,
+    adx: adx
   };
 }));

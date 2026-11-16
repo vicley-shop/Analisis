@@ -12,178 +12,273 @@
     strong_sell: 'Venta fuerte'
   };
 
-  function num(v) { return v != null && isFinite(v); }
+  function num(v) {
+    return v != null && Number.isFinite(v);
+  }
+
+  function cfg() {
+    return (typeof window !== 'undefined' && window.AT_CONFIG) || {};
+  }
+
+  function weightFor(tf) {
+    const w = (cfg().timeframes && cfg().timeframes.weights) || {};
+    return w[tf] || 1;
+  }
+
+  function normalizeAdx(adx) {
+    const ceiling = (cfg().consensus && cfg().consensus.adxNormalizationCeiling) || 50;
+    if (!num(adx) || adx <= 0) return 0;
+    return Math.min(adx, ceiling) / ceiling;
+  }
+
+  function cleanBars(bars) {
+    if (!bars || !bars.length) return bars;
+    const useClosed = cfg().analysis && cfg().analysis.useClosedCandlesOnly !== false;
+    if (useClosed && bars.length > 1) return bars.slice(0, -1);
+    return bars;
+  }
+
+  function getSessionState(now) {
+    const sess = (cfg().sessions) || {};
+    const combined = sess.combined || { startGmt: 7, endGmt: 21 };
+    const hourGmt = now.getUTCHours() + now.getUTCMinutes() / 60;
+    let start = combined.startGmt;
+    let end = combined.endGmt;
+    if (sess.dstAdjust) {
+      const y = now.getUTCFullYear();
+      const march = new Date(Date.UTC(y, 2, 31));
+      while (march.getUTCDay() !== 0) march.setUTCDate(march.getUTCDate() - 1);
+      const october = new Date(Date.UTC(y, 9, 31));
+      while (october.getUTCDay() !== 0) october.setUTCDate(october.getUTCDate() - 1);
+      if (now >= march && now < october) { start -= 1; end -= 1; }
+    }
+    return { active: hourGmt >= start && hourGmt < end, hour: hourGmt };
+  }
 
   function analyzeTimeframe(bars) {
     if (!bars || bars.length < 60) return null;
-    const c = bars.map(function (b) { return b.c; });
-    const h = bars.map(function (b) { return b.h; });
-    const l = bars.map(function (b) { return b.l; });
+    const closes = bars.map(function (b) { return b.c; });
+    const highs = bars.map(function (b) { return b.h; });
+    const lows = bars.map(function (b) { return b.l; });
 
-    const fast = I.ema(c, 9);
-    const slow = I.ema(c, 21);
-    const adxData = I.adx(h, l, c, 14);
+    const emaPeriods = (cfg().chart && cfg().chart.emaPeriods) || [20, 50, 200];
+    const fast = I.ema(closes, emaPeriods[0]);
+    const slow = I.ema(closes, emaPeriods[1]);
+    const adxData = I.adx(highs, lows, closes, 14);
 
     const i = bars.length - 1;
-    const price = c[i];
+    const price = closes[i];
+    const f = fast[i];
+    const s = slow[i];
+    const adxVal = adxData.adx[i];
 
-    if (!num(fast[i]) || !num(slow[i]) || !num(adxData.adx[i])) return null;
-
-    const direction = fast[i] > slow[i] ? 1 : -1;
-    const adx = adxData.adx[i];
-    const priceAboveSlow = price > slow[i];
+    if (!num(f) || !num(s) || !num(adxVal)) return null;
 
     return {
-      direction: direction,
-      adx: adx,
-      priceAboveSlow: priceAboveSlow,
+      direction: f > s ? 1 : -1,
+      adx: adxVal,
+      priceAboveSlow: price > s,
       price: price,
-      fast: fast[i],
-      slow: slow[i],
+      fast: f,
+      slow: s,
+      plusDI: adxData.plusDI[i],
+      minusDI: adxData.minusDI[i],
       bars: bars.length
     };
   }
 
-  function findNearestLevels(bars, currentPrice) {
-    const highs = [];
-    const lows = [];
-    const lookback = 3;
-    
-    if (!bars || bars.length < 20) return { support: null, resistance: null };
+  function findNearestLevels(bars, currentPrice, lookback) {
+    lookback = lookback || 3;
+    if (!bars || bars.length < lookback * 2 + 2) return { support: null, resistance: null };
+    const supports = [];
+    const resistances = [];
 
     for (let i = lookback; i < bars.length - lookback; i++) {
       const b = bars[i];
       let isHigh = true;
       let isLow = true;
-
       for (let j = 1; j <= lookback; j++) {
         if (bars[i - j].h >= b.h || bars[i + j].h >= b.h) isHigh = false;
         if (bars[i - j].l <= b.l || bars[i + j].l <= b.l) isLow = false;
       }
-
-      if (isHigh && b.h > currentPrice) highs.push(b.h);
-      if (isLow && b.l < currentPrice) lows.push(b.l);
+      if (isHigh) {
+        if (b.h < currentPrice) supports.push(b.h);
+        else resistances.push(b.h);
+      }
+      if (isLow) {
+        if (b.l < currentPrice) supports.push(b.l);
+        else resistances.push(b.l);
+      }
     }
 
-    const support = lows.length > 0 ? Math.max.apply(null, lows) : null;
-    const resistance = highs.length > 0 ? Math.min.apply(null, highs) : null;
-
-    return { support: support, resistance: resistance };
+    return {
+      support: supports.length ? Math.max.apply(null, supports) : null,
+      resistance: resistances.length ? Math.min.apply(null, resistances) : null
+    };
   }
 
-  function detectExhaustion(bars, direction, config) {
+  function detectExhaustion(bars, direction, exCfg) {
     const alerts = [];
     if (!bars || bars.length < 40) return alerts;
 
-    const c = bars.map(function (b) { return b.c; });
-    const h = bars.map(function (b) { return b.h; });
-    const l = bars.map(function (b) { return b.l; });
-    const v = bars.map(function (b) { return b.v || 0; });
-    
-    const rsiArr = I.rsi(c, 14);
-    const adxData = I.adx(h, l, c, 14);
-    const adxArr = adxData.adx;
-    
-    const i = bars.length - 1;
-    const lastRsi = rsiArr[i];
+    const closes = bars.map(function (b) { return b.c; });
+    const highs = bars.map(function (b) { return b.h; });
+    const lows = bars.map(function (b) { return b.l; });
+    const vols = bars.map(function (b) { return b.v || 0; });
 
+    const i = bars.length - 1;
+    const rsiPeriod = exCfg.rsiPeriod || 14;
+    const rsiArr = I.rsi(closes, rsiPeriod);
+    const adxData = I.adx(highs, lows, closes, 14);
+    const adxArr = adxData.adx;
+
+    const lastRsi = rsiArr[i];
     if (num(lastRsi)) {
-      if (lastRsi > (config.rsiOverbought || 70)) {
-        alerts.push({ type: 'warn', text: 'RSI en zona de sobrecompra (' + lastRsi.toFixed(1) + '). Posible agotamiento alcista.' });
-      } else if (lastRsi < (config.rsiOversold || 30)) {
-        alerts.push({ type: 'warn', text: 'RSI en zona de sobreventa (' + lastRsi.toFixed(1) + '). Posible agotamiento bajista.' });
+      if (lastRsi > (exCfg.rsiOverbought || 70)) {
+        alerts.push({ type: 'warn', text: 'RSI en sobrecompra (' + lastRsi.toFixed(1) + '). Posible agotamiento alcista.' });
+      } else if (lastRsi < (exCfg.rsiOversold || 30)) {
+        alerts.push({ type: 'warn', text: 'RSI en sobreventa (' + lastRsi.toFixed(1) + '). Posible agotamiento bajista.' });
       }
     }
 
-    const lookback = config.lookbackCandles || 5;
+    const lookback = exCfg.lookbackCandles || 5;
     if (i >= lookback && num(adxArr[i]) && num(adxArr[i - lookback]) && adxArr[i - lookback] > 0) {
       const dropPct = ((adxArr[i - lookback] - adxArr[i]) / adxArr[i - lookback]) * 100;
-      if (dropPct > (config.adxDropPct || 20)) {
-        alerts.push({ type: 'info', text: 'Fuerza de tendencia (ADX) ha caído un ' + dropPct.toFixed(0) + '% en las últimas ' + lookback + ' velas.' });
+      if (dropPct > (exCfg.adxDropPct || 20)) {
+        alerts.push({ type: 'info', text: 'ADX ha caído ' + dropPct.toFixed(0) + '% en ' + lookback + ' velas.' });
       }
     }
 
-    if (i > 35) {
+    const divLb = exCfg.divergenceLookback || 15;
+    const gap = exCfg.divergenceGap != null ? exCfg.divergenceGap : 1;
+    const minIdx = 2 * divLb + gap;
+    if (i >= minIdx) {
+      const currLowStart = i - divLb + 1;
+      const prevLowEnd = currLowStart - gap;
+      const prevLowStart = prevLowEnd - divLb + 1;
       let currLowIdx = -1, currLowVal = Infinity;
-      for (let j = i; j >= i - 15; j--) {
-        if (l[j] < currLowVal) { currLowVal = l[j]; currLowIdx = j; }
-      }
       let prevLowIdx = -1, prevLowVal = Infinity;
-      for (let j = i - 20; j >= i - 35; j--) {
-        if (l[j] < prevLowVal) { prevLowVal = l[j]; prevLowIdx = j; }
-      }
-      if (currLowIdx !== -1 && prevLowIdx !== -1 && currLowVal < prevLowVal) {
-        if (num(rsiArr[currLowIdx]) && num(rsiArr[prevLowIdx]) && rsiArr[currLowIdx] > rsiArr[prevLowIdx]) {
-          alerts.push({ type: 'danger', text: 'Divergencia alcista detectada: Precio hace mínimo más bajo, pero RSI hace mínimo más alto.' });
-        }
+      for (let j = currLowStart; j <= i; j++) if (lows[j] < currLowVal) { currLowVal = lows[j]; currLowIdx = j; }
+      for (let j = prevLowStart; j <= prevLowEnd; j++) if (lows[j] < prevLowVal) { prevLowVal = lows[j]; prevLowIdx = j; }
+      if (currLowIdx !== -1 && prevLowIdx !== -1 && currLowVal < prevLowVal &&
+          num(rsiArr[currLowIdx]) && num(rsiArr[prevLowIdx]) && rsiArr[currLowIdx] > rsiArr[prevLowIdx]) {
+        alerts.push({ type: 'danger', text: 'Divergencia alcista: precio hace mínimo más bajo, RSI mínimo más alto.' });
       }
 
+      const currHighStart = i - divLb + 1;
+      const prevHighEnd = currHighStart - gap;
+      const prevHighStart = prevHighEnd - divLb + 1;
       let currHighIdx = -1, currHighVal = -Infinity;
-      for (let j = i; j >= i - 15; j--) {
-        if (h[j] > currHighVal) { currHighVal = h[j]; currHighIdx = j; }
-      }
       let prevHighIdx = -1, prevHighVal = -Infinity;
-      for (let j = i - 20; j >= i - 35; j--) {
-        if (h[j] > prevHighVal) { prevHighVal = h[j]; prevHighIdx = j; }
-      }
-      if (currHighIdx !== -1 && prevHighIdx !== -1 && currHighVal > prevHighVal) {
-        if (num(rsiArr[currHighIdx]) && num(rsiArr[prevHighIdx]) && rsiArr[currHighIdx] < rsiArr[prevHighIdx]) {
-          alerts.push({ type: 'danger', text: 'Divergencia bajista detectada: Precio hace máximo más alto, pero RSI hace máximo más bajo.' });
-        }
+      for (let j = currHighStart; j <= i; j++) if (highs[j] > currHighVal) { currHighVal = highs[j]; currHighIdx = j; }
+      for (let j = prevHighStart; j <= prevHighEnd; j++) if (highs[j] > prevHighVal) { prevHighVal = highs[j]; prevHighIdx = j; }
+      if (currHighIdx !== -1 && prevHighIdx !== -1 && currHighVal > prevHighVal &&
+          num(rsiArr[currHighIdx]) && num(rsiArr[prevHighIdx]) && rsiArr[currHighIdx] < rsiArr[prevHighIdx]) {
+        alerts.push({ type: 'danger', text: 'Divergencia bajista: precio hace máximo más alto, RSI máximo más bajo.' });
       }
     }
 
-    const volLookback = config.volumeLookback || 20;
-    if (i > volLookback) {
+    const volLb = exCfg.volumeLookback || 20;
+    if (i > volLb) {
       let avgVol = 0;
-      for (let j = i - 1; j >= i - volLookback; j--) avgVol += v[j];
-      avgVol /= volLookback;
-      const lastVol = v[i];
-      const isBearish = c[i] < bars[i].o;
-      const isBullish = c[i] > bars[i].o;
-
-      if (direction === -1 && isBearish && lastVol < avgVol * (1 - (config.volumeDropPct || 30) / 100)) {
-        alerts.push({ type: 'warn', text: 'Volumen bajo en vela bajista. Posible falta de convicción vendedora.' });
-      } else if (direction === 1 && isBullish && lastVol < avgVol * (1 - (config.volumeDropPct || 30) / 100)) {
-        alerts.push({ type: 'warn', text: 'Volumen bajo en vela alcista. Posible falta de convicción compradora.' });
+      for (let j = i - 1; j >= i - volLb; j--) avgVol += vols[j];
+      avgVol /= volLb;
+      const lastVol = vols[i];
+      const isBearish = closes[i] < bars[i].o;
+      const isBullish = closes[i] > bars[i].o;
+      const threshold = avgVol * (1 - (exCfg.volumeDropPct || 30) / 100);
+      if (direction === -1 && isBearish && lastVol < threshold) {
+        alerts.push({ type: 'warn', text: 'Volumen bajo en vela bajista. Falta de convicción vendedora.' });
+      } else if (direction === 1 && isBullish && lastVol < threshold) {
+        alerts.push({ type: 'warn', text: 'Volumen bajo en vela alcista. Falta de convicción compradora.' });
       }
     }
 
     return alerts;
   }
 
-  function analyze(barsByTf) {
-    const CFG = window.AT_CONFIG || {};
-    const exCfg = CFG.exhaustion || {};
-    
+  function suggestRisk(entry, support, resistance, atr, direction) {
+    const riskCfg = cfg().risk || {};
+    const stopMult = riskCfg.atrStopMult || 1.5;
+    const targetMult = riskCfg.atrTargetMult || 3.0;
+    const minRR = riskCfg.minRR || 1.5;
+    if (!num(entry) || !num(atr) || atr <= 0) return null;
+
+    let stop, target, risk, reward;
+    if (direction === 1) {
+      const atrStop = entry - stopMult * atr;
+      stop = num(support) ? Math.min(support, atrStop) : atrStop;
+      const atrTarget = entry + targetMult * atr;
+      target = num(resistance) ? Math.max(resistance, atrTarget) : atrTarget;
+      risk = entry - stop;
+      reward = target - entry;
+    } else if (direction === -1) {
+      const atrStop = entry + stopMult * atr;
+      stop = num(resistance) ? Math.max(resistance, atrStop) : atrStop;
+      const atrTarget = entry - targetMult * atr;
+      target = num(support) ? Math.min(support, atrTarget) : atrTarget;
+      risk = stop - entry;
+      reward = entry - target;
+    } else {
+      return null;
+    }
+
+    if (risk <= 0 || reward <= 0) return null;
+    const rr = reward / risk;
+    return { stop: stop, target: target, rr: rr, valid: rr >= minRR };
+  }
+
+  function emptyResult(reason) {
+    return {
+      consensusScore: 0,
+      consensusLabel: 'neutral',
+      consensusText: LABELS.neutral,
+      confidence: 0,
+      overallDirection: 0,
+      perTf: {},
+      macroTrend: '—',
+      macroMomentum: '—',
+      macroVolatility: '—',
+      avgAdxAligned: 0,
+      avgAdxOpposed: 0,
+      alerts: [],
+      verdictState: 'wait',
+      verdictLabel: 'ESPERAR',
+      verdictReason: reason || 'Datos insuficientes.',
+      verdictRisk: null,
+      sessionActive: false,
+      entryTf: null,
+      conclusion: reason || 'Datos insuficientes. Se necesitan al menos dos temporalidades con historial suficiente.'
+    };
+  }
+
+  function analyze(barsByTf, opts) {
+    opts = opts || {};
+    const c = cfg();
+    const consensusCfg = c.consensus || {};
+    const thresholds = consensusCfg.thresholds || { strong: 70, moderate: 50 };
+    const minValidTfs = consensusCfg.minimumValidTfs || 2;
+    const tieBreak = consensusCfg.tieBreak || 'higher_tf';
+    const entryTf = opts.currentTf || (c.timeframes && c.timeframes.entry) || '1h';
+
     const tfs = Object.keys(barsByTf || {});
     const perTf = {};
     const valid = [];
 
     tfs.forEach(function (tf) {
-      const r = analyzeTimeframe(barsByTf[tf]);
+      const bars = cleanBars(barsByTf[tf]);
+      const r = analyzeTimeframe(bars);
       if (r) {
+        r.adxNorm = normalizeAdx(r.adx);
+        r.weight = weightFor(tf);
+        r.evidence = r.weight * r.adxNorm;
         perTf[tf] = r;
         valid.push({ tf: tf, data: r });
       }
     });
 
-    if (valid.length < 2) {
-      return {
-        consensusScore: 0,
-        consensusLabel: 'neutral',
-        consensusText: LABELS.neutral,
-        overallDirection: 0,
-        perTf: perTf,
-        macroTrend: '—',
-        macroMomentum: '—',
-        macroVolatility: '—',
-        alerts: [],
-        verdictState: 'wait',
-        verdictLabel: 'ESPERAR',
-        verdictReason: 'Datos insuficientes para operar.',
-        conclusion: 'Datos insuficientes. Se necesitan al menos dos temporalidades con historial suficiente.'
-      };
+    if (valid.length < minValidTfs) {
+      return emptyResult('Datos insuficientes: se necesitan al menos ' + minValidTfs + ' temporalidades con historial suficiente.');
     }
 
     let buyVotes = 0;
@@ -193,58 +288,72 @@
       else sellVotes++;
     });
 
-    const overallDirection = buyVotes >= sellVotes ? 1 : -1;
+    let overallDirection;
+    if (buyVotes > sellVotes) overallDirection = 1;
+    else if (sellVotes > buyVotes) overallDirection = -1;
+    else overallDirection = tieBreak === 'neutral' ? 0 : (function () {
+      const sorted = valid.slice().sort(function (a, b) { return b.data.weight - a.data.weight; });
+      return sorted.length && sorted[0].data.direction ? sorted[0].data.direction : 0;
+    })();
 
+    let sumAllEvidence = 0;
+    let sumAgreeEvidence = 0;
+    let sumAllWeight = 0;
     let sumAgreeAdx = 0;
-    let sumAllAdx = 0;
+    let sumOpposedAdx = 0;
+    let agreeCount = 0;
+    let opposedCount = 0;
 
     valid.forEach(function (v) {
-      const agree = v.data.direction === overallDirection;
+      const agree = overallDirection === 0 ? false : v.data.direction === overallDirection;
       v.agree = agree;
       perTf[v.tf].agree = agree;
-      sumAllAdx += v.data.adx;
-      if (agree) sumAgreeAdx += v.data.adx;
+      sumAllEvidence += v.data.evidence;
+      sumAllWeight += v.data.weight;
+      if (agree) {
+        sumAgreeEvidence += v.data.evidence;
+        sumAgreeAdx += v.data.adx;
+        agreeCount++;
+      } else {
+        sumOpposedAdx += v.data.adx;
+        opposedCount++;
+      }
     });
 
-    const consensusScore = sumAllAdx > 0 ? (sumAgreeAdx / sumAllAdx) * 100 : 0;
+    const consensusScore = sumAllEvidence > 0 ? (sumAgreeEvidence / sumAllEvidence) * 100 : 0;
+    const magnitude = sumAllWeight > 0 ? sumAllEvidence / sumAllWeight : 0;
+    const confidence = overallDirection === 0 ? 0 : magnitude * (consensusScore / 100) * 100;
 
-    let consensusLabel, consensusText;
-    const thresholds = (CFG.consensus && CFG.consensus.thresholds) || { strong: 75, moderate: 50 };
+    let consensusLabel;
+    if (overallDirection === 0) consensusLabel = 'neutral';
+    else if (consensusScore >= thresholds.strong) consensusLabel = overallDirection === 1 ? 'strong_buy' : 'strong_sell';
+    else if (consensusScore >= thresholds.moderate) consensusLabel = overallDirection === 1 ? 'buy' : 'sell';
+    else consensusLabel = 'neutral';
 
-    if (consensusScore >= thresholds.strong) {
-      consensusLabel = overallDirection === 1 ? 'strong_buy' : 'strong_sell';
-    } else if (consensusScore >= thresholds.moderate) {
-      consensusLabel = overallDirection === 1 ? 'buy' : 'sell';
-    } else {
-      consensusLabel = 'neutral';
-    }
-    consensusText = LABELS[consensusLabel];
+    const avgAdxAligned = agreeCount > 0 ? sumAgreeAdx / agreeCount : 0;
+    const avgAdxOpposed = opposedCount > 0 ? sumOpposedAdx / opposedCount : 0;
 
-    let avgAdx = sumAllAdx / valid.length;
     let macroTrend;
-    if (avgAdx >= 30) macroTrend = 'Muy fuerte';
-    else if (avgAdx >= 22) macroTrend = 'Fuerte';
-    else if (avgAdx >= 18) macroTrend = 'Moderada';
+    if (avgAdxAligned >= 30) macroTrend = 'Muy fuerte';
+    else if (avgAdxAligned >= 25) macroTrend = 'Fuerte';
+    else if (avgAdxAligned >= 20) macroTrend = 'Moderada';
     else macroTrend = 'Débil';
 
-    const order = ['1m', '5m', '15m', '30m', '1h', '4h', '1d'];
-    const highestTf = valid.reduce(function (a, b) {
-      return order.indexOf(a.tf) > order.indexOf(b.tf) ? a : b;
-    }).tf;
+    const entryBarsRaw = barsByTf[entryTf] || null;
+    const entryBars = entryBarsRaw ? cleanBars(entryBarsRaw) : null;
 
-    const highBars = barsByTf[highestTf];
     let macroMomentum = '—';
     let macroVolatility = '—';
     let alerts = [];
     let atrVal = 0;
 
-    if (highBars && highBars.length > 30) {
-      const hc = highBars.map(function (b) { return b.c; });
-      const hh = highBars.map(function (b) { return b.h; });
-      const hl = highBars.map(function (b) { return b.l; });
+    if (entryBars && entryBars.length > 30) {
+      const hc = entryBars.map(function (b) { return b.c; });
+      const hh = entryBars.map(function (b) { return b.h; });
+      const hl = entryBars.map(function (b) { return b.l; });
 
-      const rsi = I.rsi(hc, 14);
-      const lastRsi = rsi[rsi.length - 1];
+      const rsiArr = I.rsi(hc, 14);
+      const lastRsi = rsiArr[rsiArr.length - 1];
       if (num(lastRsi)) {
         if (lastRsi >= 60) macroMomentum = 'Alcista';
         else if (lastRsi <= 40) macroMomentum = 'Bajista';
@@ -254,102 +363,113 @@
       const atrArr = I.atr(hh, hl, hc, 14);
       const lastAtr = atrArr[atrArr.length - 1];
       const cleanAtr = atrArr.filter(num);
-      const avgAtr = I.sma(cleanAtr, 20);
-      const avgVal = avgAtr[avgAtr.length - 1];
-      
-      if (num(lastAtr) && num(avgVal) && avgVal > 0) {
+      const avgAtrArr = I.sma(cleanAtr, 20);
+      const avgAtrVal = avgAtrArr[avgAtrArr.length - 1];
+
+      if (num(lastAtr) && num(avgAtrVal) && avgAtrVal > 0) {
         atrVal = lastAtr;
-        const ratio = lastAtr / avgVal;
+        const ratio = lastAtr / avgAtrVal;
         if (ratio >= 1.3) macroVolatility = 'Alta';
         else if (ratio <= 0.75) macroVolatility = 'Baja';
         else macroVolatility = 'Normal';
       }
 
-      alerts = detectExhaustion(highBars, overallDirection, exCfg);
+      alerts = detectExhaustion(entryBars, overallDirection, c.exhaustion || {});
 
-      if (consensusScore >= 90 && overallDirection === -1) {
-        alerts.push({ type: 'danger', text: 'Consenso casi unánime bajista. Alta probabilidad de sobre-extensión y rebote técnico inminente.' });
-      } else if (consensusScore >= 90 && overallDirection === 1) {
-        alerts.push({ type: 'danger', text: 'Consenso casi unánime alcista. Alta probabilidad de sobre-extensión y retroceso técnico inminente.' });
+      const overext = (c.exhaustion && c.exhaustion.consensusOverextension) || 90;
+      if (consensusScore >= overext && overallDirection === 1) {
+        alerts.push({ type: 'danger', text: 'Consenso casi unánime alcista. Alta probabilidad de sobre-extensión y retroceso.' });
+      } else if (consensusScore >= overext && overallDirection === -1) {
+        alerts.push({ type: 'danger', text: 'Consenso casi unánime bajista. Alta probabilidad de sobre-extensión y rebote.' });
       }
     }
+
+    const session = getSessionState(new Date());
+    const requireActive = c.sessions && c.sessions.requireActive;
+    const currentPrice = valid[0].data.price;
+    const levels = findNearestLevels(entryBars, currentPrice, 3);
+    const risk = overallDirection !== 0 ? suggestRisk(currentPrice, levels.support, levels.resistance, atrVal, overallDirection) : null;
+
+    const digits = (c.symbols && opts.symbol && c.symbols[opts.symbol] && c.symbols[opts.symbol].digits) || 2;
+    const fmt = function (p) { return num(p) ? p.toFixed(digits) : '—'; };
 
     let verdictState = 'wait';
     let verdictLabel = 'ESPERAR';
     let verdictReason = 'Analizando condiciones...';
 
-    const hasDanger = alerts.some(function(a) { return a.type === 'danger'; });
-    const currentPrice = valid[0].data.price;
-    const levels = findNearestLevels(highBars, currentPrice);
+    const hasDanger = alerts.some(function (a) { return a.type === 'danger'; });
 
-    if (hasDanger) {
-      verdictReason = 'Hay alertas críticas de agotamiento. El movimiento está sobreextendido, espera un retroceso.';
-    } else if (consensusScore < thresholds.moderate) {
-      verdictReason = 'Consenso entre temporalidades menor al 50%. El mercado está indeciso o lateral.';
-    } else {
-      if (overallDirection === 1) {
-        if (levels.support && atrVal > 0) {
-          const dist = (currentPrice - levels.support) / atrVal;
-          if (dist <= 1.5) {
-            verdictState = 'buy';
-            verdictLabel = 'PREPARAR COMPRA';
-            verdictReason = 'Tendencia alcista y el precio está cerca de un soporte en ' + levels.support.toFixed(CFG.symbols[Object.keys(CFG.symbols)[0]].digits) + '.';
-          } else {
-            verdictReason = 'Tendencia alcista, pero el precio está lejos del soporte (' + levels.support.toFixed(4) + '). Espera un retroceso.';
-          }
-        } else {
-          verdictReason = 'Tendencia alcista, pero no se detectan soportes cercanos claros. Espera.';
-        }
-      } else if (overallDirection === -1) {
-        if (levels.resistance && atrVal > 0) {
-          const dist = (levels.resistance - currentPrice) / atrVal;
-          if (dist <= 1.5) {
-            verdictState = 'sell';
-            verdictLabel = 'PREPARAR VENTA';
-            verdictReason = 'Tendencia bajista y el precio está cerca de una resistencia en ' + levels.resistance.toFixed(CFG.symbols[Object.keys(CFG.symbols)[0]].digits) + '.';
-          } else {
-            verdictReason = 'Tendencia bajista, pero el precio está lejos de la resistencia (' + levels.resistance.toFixed(4) + '). Espera un rebote.';
-          }
-        } else {
-          verdictReason = 'Tendencia bajista, pero no se detectan resistencias cercanas claras. Espera.';
-        }
+    if (requireActive && !session.active) {
+      verdictReason = 'Fuera de sesión activa. Operar con baja liquidez amplía el spread y degrada la ejecución.';
+    } else if (overallDirection === 0) {
+      verdictReason = 'Temporalidades empatadas. Sin sesgo direccional claro.';
+    } else if (consensusLabel === 'neutral') {
+      verdictReason = 'Consenso entre temporalidades por debajo del umbral (' + consensusScore.toFixed(0) + '%).';
+    } else if (hasDanger) {
+      verdictReason = 'Alertas críticas de agotamiento. El movimiento está sobreextendido; espera retroceso.';
+    } else if (confidence < 20) {
+      verdictReason = 'Confianza insuficiente (' + confidence.toFixed(0) + '%). La evidencia es débil o contradictoria.';
+    } else if (!risk) {
+      verdictReason = 'No se pudo calcular una gestión de riesgo válida (ATR o niveles insuficientes).';
+    } else if (!risk.valid) {
+      verdictReason = 'R:R ' + risk.rr.toFixed(2) + ':1 por debajo del mínimo requerido (' + ((c.risk && c.risk.minRR) || 1.5) + ':1).';
+    } else if (overallDirection === 1) {
+      const dist = atrVal > 0 ? (currentPrice - levels.support) / atrVal : Infinity;
+      if (dist <= 1.5) {
+        verdictState = 'buy';
+        verdictLabel = 'PREPARAR COMPRA';
+        verdictReason = 'Sesgo alcista, precio cerca de soporte en ' + fmt(levels.support) + '. R:R ' + risk.rr.toFixed(2) + ':1.';
+      } else {
+        verdictReason = 'Sesgo alcista, pero el precio está a ' + dist.toFixed(1) + '×ATR del soporte. Espera retroceso.';
+      }
+    } else if (overallDirection === -1) {
+      const dist = atrVal > 0 ? (levels.resistance - currentPrice) / atrVal : Infinity;
+      if (dist <= 1.5) {
+        verdictState = 'sell';
+        verdictLabel = 'PREPARAR VENTA';
+        verdictReason = 'Sesgo bajista, precio cerca de resistencia en ' + fmt(levels.resistance) + '. R:R ' + risk.rr.toFixed(2) + ':1.';
+      } else {
+        verdictReason = 'Sesgo bajista, pero el precio está a ' + dist.toFixed(1) + '×ATR de la resistencia. Espera rebote.';
       }
     }
 
     const conclusionParts = [];
-    const dirText = overallDirection === 1 ? 'alcista' : 'bajista';
+    const dirText = overallDirection === 1 ? 'alcista' : overallDirection === -1 ? 'bajista' : 'neutral';
 
     if (consensusLabel === 'strong_buy' || consensusLabel === 'strong_sell') {
-      conclusionParts.push('Sesgo ' + dirText + ' fuerte con consenso del ' + consensusScore.toFixed(0) + '% de las temporalidades.');
+      conclusionParts.push('Sesgo ' + dirText + ' fuerte con consenso del ' + consensusScore.toFixed(0) + '% y confianza del ' + confidence.toFixed(0) + '%.');
     } else if (consensusLabel === 'buy' || consensusLabel === 'sell') {
-      conclusionParts.push('Sesgo ' + dirText + ' moderado (consenso ' + consensusScore.toFixed(0) + '%).');
+      conclusionParts.push('Sesgo ' + dirText + ' moderado (consenso ' + consensusScore.toFixed(0) + '%, confianza ' + confidence.toFixed(0) + '%).');
     } else {
-      conclusionParts.push('Temporalidades divididas (consenso ' + consensusScore.toFixed(0) + '%). Mercado en rango o transición.');
+      conclusionParts.push('Temporalidades divididas o sin fuerza (consenso ' + consensusScore.toFixed(0) + '%). Mercado en rango o transición.');
     }
 
-    conclusionParts.push('Fuerza de tendencia media: ' + macroTrend + ' (ADX ' + avgAdx.toFixed(1) + ').');
-
-    if (macroMomentum !== '—') {
-      conclusionParts.push('Momentum en ' + highestTf.toUpperCase() + ': ' + macroMomentum + '.');
+    conclusionParts.push('Fuerza a favor: ' + macroTrend + ' (ADX ' + avgAdxAligned.toFixed(1) + ').');
+    if (opposedCount > 0 && avgAdxOpposed > 0) {
+      conclusionParts.push('Fuerza en contra: ADX ' + avgAdxOpposed.toFixed(1) + '.');
     }
-
-    if (alerts.length > 0) {
-      conclusionParts.push('⚠️ PRECAUCIÓN: Se han detectado ' + alerts.length + ' señales de agotamiento.');
-    }
+    if (macroMomentum !== '—') conclusionParts.push('Momentum en ' + entryTf.toUpperCase() + ': ' + macroMomentum + '.');
+    if (alerts.length > 0) conclusionParts.push('⚠️ ' + alerts.length + ' señal(es) de agotamiento detectada(s).');
 
     return {
       consensusScore: consensusScore,
       consensusLabel: consensusLabel,
-      consensusText: consensusText,
+      consensusText: LABELS[consensusLabel],
+      confidence: confidence,
       overallDirection: overallDirection,
       perTf: perTf,
       macroTrend: macroTrend,
       macroMomentum: macroMomentum,
       macroVolatility: macroVolatility,
+      avgAdxAligned: avgAdxAligned,
+      avgAdxOpposed: avgAdxOpposed,
       alerts: alerts,
       verdictState: verdictState,
       verdictLabel: verdictLabel,
       verdictReason: verdictReason,
+      verdictRisk: risk,
+      sessionActive: session.active,
+      entryTf: entryTf,
       conclusion: conclusionParts.join(' ')
     };
   }

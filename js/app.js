@@ -9,20 +9,27 @@
 
   const state = {
     symbol: 'XAUUSD',
-    tf: '1h',
+    tf: (CFG.timeframes && CFG.timeframes.entry) || '1h',
     bars: {},
     ticks: {},
     analysis: null,
     smcResult: null,
     feedMode: 'off',
-    loading: false
+    loading: false,
+    requestId: 0,
+    renderTimer: null,
+    analysisTimer: null,
+    lastAnalysisAt: 0,
+    signalLog: [],
+    lastVerdictState: 'wait'
   };
 
   let chart = null;
-  let renderTimer = null;
-  let lastVerdict = 'wait';
+  let feed = null;
 
-  const $ = function (id) { return document.getElementById(id); };
+  const MAX_SIGNAL_LOG = 200;
+
+  function $(id) { return document.getElementById(id); }
 
   function esc(v) {
     return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) {
@@ -32,19 +39,19 @@
 
   function fmt(sym, price) {
     const inst = CFG.symbols[sym];
-    if (!inst || price == null || !isFinite(price)) return '—';
+    if (!inst || price == null || !Number.isFinite(price)) return '—';
     return Number(price).toFixed(inst.digits);
   }
 
   function sgn(v, d) {
-    if (v == null || !isFinite(v)) return '—';
+    if (v == null || !Number.isFinite(v)) return '—';
     return (v >= 0 ? '+' : '') + Number(v).toFixed(d);
   }
 
   function needleAngle(score, dir) {
-    if (score < 50) return 0;
-    const a = (score - 50) / 50 * 90;
-    return dir === 1 ? a : -a;
+    if (dir === 0 || dir == null) return 0;
+    const s = Math.max(0, Math.min(100, score || 0));
+    return (s / 100) * 90 * dir;
   }
 
   function renderStatus() {
@@ -52,9 +59,10 @@
     const txt = $('statusText');
     if (!dot || !txt) return;
     const m = state.feedMode;
-    let cls = '', msg = 'Conectando…';
+    let cls = '';
+    let msg = 'Conectando…';
     if (m === 'live') { cls = 'ok'; msg = 'En vivo'; }
-    else if (m === 'polling') { cls = 'warn'; msg = 'Sondeo (2s)'; }
+    else if (m === 'polling') { cls = 'warn'; msg = 'Sondeo'; }
     else if (m === 'reconnecting') { cls = 'warn'; msg = 'Reconectando…'; }
     else if (m === 'error') { cls = 'bad'; msg = 'Sin conexión'; }
     dot.className = 'dot ' + cls;
@@ -65,9 +73,9 @@
     const t = state.ticks[state.symbol];
     const bars = state.bars[state.tf] || [];
     const price = t ? t.mid : (bars.length ? bars[bars.length - 1].c : null);
-    
+
     $('priceBig').textContent = fmt(state.symbol, price);
-    
+
     const chg = $('priceChg');
     if (t && t.dayPct != null && t.state !== 'closed') {
       chg.textContent = sgn(t.dayPct, 2) + '% hoy';
@@ -80,13 +88,10 @@
       ? 'Bid ' + fmt(state.symbol, t.bid) + ' · Ask ' + fmt(state.symbol, t.ask) + ' · Spread ' + fmt(state.symbol, t.spread)
       : 'Esperando precio…';
 
-    const now = new Date();
-    const hour = now.getUTCHours();
-    const sess = CFG.sessions.combined;
-    const open = hour >= sess.startGmt && hour < sess.endGmt;
     const sb = $('sessionBadge');
-    sb.textContent = open ? '✓ Sesión activa' : '✗ Fuera de sesión';
-    sb.className = 'session-badge ' + (open ? 'ok' : 'bad');
+    const active = state.analysis ? state.analysis.sessionActive : false;
+    sb.textContent = active ? '✓ Sesión activa' : '✗ Fuera de sesión';
+    sb.className = 'session-badge ' + (active ? 'ok' : 'bad');
   }
 
   function renderGauge() {
@@ -110,7 +115,9 @@
     label.textContent = a.consensusText;
     label.className = 'gauge-label ' + a.consensusLabel;
 
-    score.textContent = 'Fuerza de consenso: ' + a.consensusScore.toFixed(0) + '%';
+    const parts = ['Consenso: ' + a.consensusScore.toFixed(0) + '%'];
+    if (Number.isFinite(a.confidence)) parts.push('confianza: ' + a.confidence.toFixed(0) + '%');
+    score.textContent = parts.join(' · ');
   }
 
   function renderVerdict() {
@@ -127,7 +134,16 @@
 
     badge.textContent = a.verdictLabel;
     badge.className = 'verdict-badge ' + a.verdictState;
-    reason.textContent = a.verdictReason;
+
+    let text = a.verdictReason || '';
+    if (a.verdictRisk && a.verdictRisk.valid) {
+      const r = a.verdictRisk;
+      text += ' · Stop ' + fmt(state.symbol, r.stop) + ' · Target ' + fmt(state.symbol, r.target);
+    }
+    if (!a.sessionActive) {
+      text = '⚠️ ' + text;
+    }
+    reason.textContent = text;
   }
 
   function renderSMC() {
@@ -144,7 +160,7 @@
       return;
     }
 
-    scoreEl.textContent = smc.score + '%';
+    scoreEl.textContent = smc.score.toFixed(0) + '%';
     barEl.style.width = smc.score + '%';
 
     if (smc.score >= 80) {
@@ -158,9 +174,31 @@
       scoreEl.style.color = 'var(--down)';
     }
 
-    reasonsEl.innerHTML = smc.reasons.map(function (r) {
-      return '<li>' + esc(r) + '</li>';
-    }).join('');
+    const lines = [];
+    const bd = smc.breakdown || {};
+    const order = ['mss', 'sweep', 'fvg', 'ob', 'ote', 'penalty'];
+    const names = { mss: 'Estructura', sweep: 'Sweep', fvg: 'FVG', ob: 'Order Block', ote: 'OTE', penalty: 'Penalización' };
+
+    order.forEach(function (key) {
+      const e = bd[key];
+      if (!e || !e.weighted) return;
+      const sign = key === 'penalty' ? '−' : '+';
+      const val = Math.abs(e.weighted).toFixed(1);
+      const detail = e.reason ? ' — ' + e.reason : '';
+      lines.push('<li>' + esc(names[key] || key) + ': ' + sign + val + esc(detail) + '</li>');
+    });
+
+    if (lines.length === 0) {
+      lines.push('<li class="muted">Sin componentes ponderados.</li>');
+    }
+
+    if (smc.vetoes && smc.vetoes.length) {
+      smc.vetoes.forEach(function (v) {
+        lines.push('<li style="color: var(--warn)">⚠️ ' + esc(v) + '</li>');
+      });
+    }
+
+    reasonsEl.innerHTML = lines.join('');
   }
 
   function renderAlerts() {
@@ -168,58 +206,96 @@
     const card = $('alertCard');
     const list = $('alertList');
 
-    if (!a || !a.alerts || a.alerts.length === 0) {
+    if (!a) {
+      card.hidden = true;
+      list.innerHTML = '';
+      return;
+    }
+
+    const alerts = (a.alerts || []).slice();
+    if (!a.sessionActive) {
+      alerts.unshift({ type: 'warn', text: 'Fuera de sesión activa. Baja liquidez, spreads más anchos.' });
+    }
+
+    if (alerts.length === 0) {
       card.hidden = true;
       list.innerHTML = '';
       return;
     }
 
     card.hidden = false;
-    list.innerHTML = a.alerts.map(function (alert) {
-      return '<li><strong>[' + alert.type.toUpperCase() + ']</strong> ' + esc(alert.text) + '</li>';
+    list.innerHTML = alerts.map(function (alert) {
+      return '<li><strong>[' + esc(alert.type.toUpperCase()) + ']</strong> ' + esc(alert.text) + '</li>';
     }).join('');
   }
 
   function renderMetrics() {
     const a = state.analysis;
     if (!a) return;
-    $('macroTrend').textContent = a.macroTrend || '—';
-    $('macroMomentum').textContent = a.macroMomentum || '—';
-    $('macroVolatility').textContent = a.macroVolatility || '—';
-    
+
+    const tEl = $('macroTrend');
+    let trendTxt = a.macroTrend || '—';
+    if (Number.isFinite(a.avgAdxAligned) && a.avgAdxAligned > 0) {
+      trendTxt += ' (' + a.avgAdxAligned.toFixed(1) + ')';
+    }
+    tEl.textContent = trendTxt;
+
+    const oEl = $('macroMomentum');
+    oEl.textContent = a.macroMomentum || '—';
+
+    const vEl = $('macroVolatility');
+    vEl.textContent = a.macroVolatility || '—';
+
+    const sEl = $('macroStructure');
     let structTxt = 'Lateral';
     let structCls = 'metric-val';
-    if (a.consensusLabel !== 'neutral') {
+    if (a.consensusLabel !== 'neutral' && a.overallDirection !== 0) {
       structTxt = a.overallDirection === 1 ? 'Alcista' : 'Bajista';
       structCls += ' ' + (a.overallDirection === 1 ? 'up' : 'down');
+      if (Number.isFinite(a.avgAdxOpposed) && a.avgAdxOpposed > 0) {
+        structTxt += ' · contra ' + a.avgAdxOpposed.toFixed(1);
+      }
     }
-    const el = $('macroStructure');
-    el.textContent = structTxt;
-    el.className = structCls;
+    sEl.textContent = structTxt;
+    sEl.className = structCls;
   }
 
   function renderMtf() {
     const a = state.analysis;
     const box = $('mtf');
-    let html = '';
+    const tfs = CFG.timeframes.list || ['15m', '1h', '4h', '1d'];
 
-    CFG.timeframes.forEach(function (tf) {
+    if (box.children.length !== tfs.length) {
+      let html = '';
+      tfs.forEach(function (tf) {
+        html += '<button data-tf="' + esc(tf) + '">' +
+          '<span class="tfn">' + esc(tf) + '</span>' +
+          '<span class="lab neutral">—</span>' +
+          '</button>';
+      });
+      box.innerHTML = html;
+    }
+
+    Array.prototype.forEach.call(box.children, function (btn) {
+      const tf = btn.dataset.tf;
       const tfData = a && a.perTf ? a.perTf[tf] : null;
-      let lab = '…', key = 'neutral';
+      const active = tf === state.tf;
+      if (active) btn.classList.add('active'); else btn.classList.remove('active');
+
+      const lab = btn.querySelector('.lab');
+      if (!lab) return;
 
       if (tfData) {
-        if (tfData.direction === 1) { lab = 'Alcista'; key = 'buy'; }
-        else { lab = 'Bajista'; key = 'sell'; }
+        if (tfData.direction === 1) { lab.textContent = 'Alcista'; lab.className = 'lab buy'; }
+        else { lab.textContent = 'Bajista'; lab.className = 'lab sell'; }
       } else if (a) {
-        lab = '—';
+        lab.textContent = '—';
+        lab.className = 'lab neutral';
+      } else {
+        lab.textContent = '…';
+        lab.className = 'lab neutral';
       }
-
-      html += '<button data-tf="' + tf + '" class="' + (tf === state.tf ? 'active' : '') + '">' +
-        '<span class="tfn">' + tf + '</span>' +
-        '<span class="lab ' + key + '">' + lab + '</span>' +
-        '</button>';
     });
-    box.innerHTML = html;
   }
 
   function renderConclusion() {
@@ -236,8 +312,9 @@
     if (!chart) return;
     const bars = state.bars[state.tf] || [];
     const inst = CFG.symbols[state.symbol];
+    if (!inst) return;
     chart.setData(bars, { tf: state.tf, digits: inst.digits });
-    
+
     if (state.smcResult && state.smcResult.zones) {
       chart.setZones(state.smcResult.zones);
     } else {
@@ -258,45 +335,112 @@
     renderChart();
   }
 
+  function logSignalIfChanged(analysis) {
+    if (!analysis) return;
+    const prev = state.lastVerdictState;
+    const curr = analysis.verdictState;
+    if (curr !== prev && (curr === 'buy' || curr === 'sell')) {
+      state.signalLog.push({
+        ts: Date.now(),
+        symbol: state.symbol,
+        tf: analysis.entryTf,
+        direction: analysis.overallDirection,
+        price: analysis.verdictRisk ? analysis.verdictRisk.stop : null,
+        target: analysis.verdictRisk ? analysis.verdictRisk.target : null,
+        rr: analysis.verdictRisk ? analysis.verdictRisk.rr : null,
+        score: analysis.consensusScore,
+        confidence: analysis.confidence
+      });
+      if (state.signalLog.length > MAX_SIGNAL_LOG) state.signalLog.shift();
+    }
+    state.lastVerdictState = curr;
+  }
+
   function runAnalysis() {
-    const res = A.analyze(state.bars);
+    state.lastAnalysisAt = Date.now();
+
+    const res = A.analyze(state.bars, { currentTf: state.tf, symbol: state.symbol });
     state.analysis = res;
 
-    if (res.verdictState !== lastVerdict) {
-      lastVerdict = res.verdictState;
-    }
+    const entryTf = res.entryTf || state.tf;
+    const entryBarsRaw = state.bars[entryTf];
 
-    if (state.bars[state.tf] && state.bars[state.tf].length > 50) {
-      const closedBars = state.bars[state.tf].slice(0, -1);
-      const smcEval = SMC.evaluate(closedBars, res.overallDirection);
-      
-      if (res.consensusScore < 50) {
-        smcEval.score = 0;
-        smcEval.reasons.unshift('⚠️ Consenso general menor al 50%. El mercado está indeciso, no se buscan entradas.');
-      }
-      state.smcResult = smcEval;
+    if (entryBarsRaw && entryBarsRaw.length > 50) {
+      const closedBars = entryBarsRaw.slice(0, -1);
+      const smcCtx = {
+        confidence: res.confidence,
+        sessionActive: res.sessionActive,
+        entryTf: entryTf
+      };
+      state.smcResult = SMC.evaluate(closedBars, res.overallDirection, smcCtx);
     } else {
-      state.smcResult = { score: 0, label: 'Sin datos', reasons: ['Esperando suficientes velas históricas...'], direction: 0, zones: {} };
+      state.smcResult = {
+        score: 0,
+        label: 'Sin datos',
+        reasons: ['Esperando suficientes velas históricas…'],
+        vetoes: ['Historial insuficiente'],
+        breakdown: {},
+        zones: {},
+        direction: 0,
+        trend: 'Débil'
+      };
     }
 
+    logSignalIfChanged(res);
     renderAll();
+  }
+
+  function scheduleAnalysis(force) {
+    const throttleMs = (CFG.analysis && CFG.analysis.throttleMs) || 1000;
+    const elapsed = Date.now() - state.lastAnalysisAt;
+
+    if (force) {
+      if (state.analysisTimer) {
+        clearTimeout(state.analysisTimer);
+        state.analysisTimer = null;
+      }
+      runAnalysis();
+      return;
+    }
+
+    if (state.analysisTimer) return;
+
+    if (elapsed >= throttleMs) {
+      runAnalysis();
+      return;
+    }
+
+    state.analysisTimer = setTimeout(function () {
+      state.analysisTimer = null;
+      runAnalysis();
+    }, throttleMs - elapsed);
   }
 
   function loadAllBars() {
     state.loading = true;
-    const tasks = CFG.timeframes.map(function (tf) {
+    state.requestId++;
+    const myId = state.requestId;
+    const tfs = CFG.timeframes.list || ['15m', '1h', '4h', '1d'];
+
+    const tasks = tfs.map(function (tf) {
       return function () { return D.fetchBars(state.symbol, tf, 1000); };
     });
 
-    return D.pool(tasks, 3).then(function (results) {
+    return D.pool(tasks, 3, 20000).then(function (results) {
+      if (state.requestId !== myId) return null;
       state.bars = {};
       results.forEach(function (r, i) {
-        if (r.ok) {
-          state.bars[CFG.timeframes[i]] = r.v;
-        }
+        if (r.ok) state.bars[tfs[i]] = r.v;
       });
       state.loading = false;
       runAnalysis();
+      return results;
+    }).catch(function (err) {
+      if (state.requestId !== myId) return null;
+      state.loading = false;
+      console.error('loadAllBars:', err.message || err);
+      renderAll();
+      return null;
     });
   }
 
@@ -306,9 +450,11 @@
     state.bars = {};
     state.analysis = null;
     state.smcResult = null;
-    
-    Array.from($('symbolBar').children).forEach(function (b) {
-      b.classList.toggle('active', b.dataset.sym === sym);
+    state.lastVerdictState = 'wait';
+
+    Array.prototype.forEach.call($('symbolBar').children, function (b) {
+      if (b.dataset.sym === sym) b.classList.add('active');
+      else b.classList.remove('active');
     });
 
     renderAll();
@@ -319,10 +465,12 @@
     const bar = $('symbolBar');
     bar.innerHTML = '';
     Object.keys(CFG.symbols).forEach(function (sym) {
+      const def = CFG.symbols[sym];
+      if (def.enabled === false) return;
       const b = document.createElement('button');
       b.className = 'sym' + (sym === state.symbol ? ' active' : '');
       b.dataset.sym = sym;
-      b.innerHTML = '<span class="sym-name">' + sym + '</span>' +
+      b.innerHTML = '<span class="sym-name">' + esc(sym) + '</span>' +
                     '<span class="sym-price">—</span>' +
                     '<span class="sym-chg muted">&nbsp;</span>';
       b.addEventListener('click', function () { selectSymbol(sym); });
@@ -331,48 +479,58 @@
   }
 
   function updateSymbolBarPrices() {
-    Array.from($('symbolBar').children).forEach(function (b) {
+    Array.prototype.forEach.call($('symbolBar').children, function (b) {
       const sym = b.dataset.sym;
       const t = state.ticks[sym];
       const p = b.querySelector('.sym-price');
       const c = b.querySelector('.sym-chg');
-      
-      if (t) {
-        p.textContent = fmt(sym, t.mid);
-        if (t.dayPct != null && t.state !== 'closed') {
-          c.textContent = sgn(t.dayPct, 2) + '%';
-          c.className = 'sym-chg ' + (t.dayPct >= 0 ? 'up' : 'down');
-        } else {
-          c.textContent = ' ';
-          c.className = 'sym-chg muted';
-        }
+      if (!t) return;
+      p.textContent = fmt(sym, t.mid);
+      if (t.dayPct != null && t.state !== 'closed') {
+        c.textContent = sgn(t.dayPct, 2) + '%';
+        c.className = 'sym-chg ' + (t.dayPct >= 0 ? 'up' : 'down');
+      } else {
+        c.textContent = ' ';
+        c.className = 'sym-chg muted';
       }
     });
   }
 
   function onTick(tick) {
+    if (!tick || !tick.symbol) return;
     state.ticks[tick.symbol] = tick;
 
-    if (tick.symbol === state.symbol) {
-      const tfMs = D.TF;
-      Object.keys(state.bars).forEach(function (tf) {
-        const ms = tfMs[tf];
-        if (ms) D.applyTick(state.bars[tf], ms, tick.mid, tick.ts);
-      });
-
-      if (renderTimer) return;
-      renderTimer = setTimeout(function () {
-        renderTimer = null;
-        updateSymbolBarPrices();
-        runAnalysis();
-      }, 200);
-    } else {
+    if (tick.symbol !== state.symbol) {
       updateSymbolBarPrices();
+      return;
     }
+
+    if (tick.stale) return;
+
+    let newBar = false;
+    const tfMs = D.TF;
+    Object.keys(state.bars).forEach(function (tf) {
+      const ms = tfMs[tf];
+      if (ms && state.bars[tf] && state.bars[tf].length) {
+        const result = D.applyTick(state.bars[tf], ms, tick.mid, tick.ts);
+        if (result === 'new') newBar = true;
+      }
+    });
+
+    if (state.renderTimer) return;
+    state.renderTimer = setTimeout(function () {
+      state.renderTimer = null;
+      updateSymbolBarPrices();
+      renderPrice();
+      scheduleAnalysis(newBar);
+    }, 100);
   }
 
   function initChart() {
-    chart = AT.chart.create($('chart'), {
+    const canvas = $('chart');
+    if (!canvas) return;
+
+    chart = AT.chart.create(canvas, {
       onHover: function (bar) {
         const el = $('legend');
         if (!bar) { el.innerHTML = '&nbsp;'; return; }
@@ -382,7 +540,7 @@
           '  C ' + f(bar.c) + '  ' + sgn(chg, 2) + '%';
       }
     });
-    
+
     $('zoomIn').addEventListener('click', function () { chart.zoom(0.8); });
     $('zoomOut').addEventListener('click', function () { chart.zoom(1.25); });
     $('zoomReset').addEventListener('click', function () { chart.reset(); });
@@ -390,16 +548,18 @@
     const chartCard = document.querySelector('.chart-card');
     $('chartFullscreen').addEventListener('click', function () {
       if (!document.fullscreenElement) {
-        chartCard.requestFullscreen().catch(function(err) {
-          console.log('Error al intentar pantalla completa:', err.message);
-        });
+        if (chartCard.requestFullscreen) {
+          chartCard.requestFullscreen().catch(function (err) {
+            console.log('Fullscreen:', err.message);
+          });
+        }
       } else {
         document.exitFullscreen();
       }
     });
 
     document.addEventListener('fullscreenchange', function () {
-      if (chart) chart.resize(); 
+      if (chart) chart.resize();
     });
 
     $('mtf').addEventListener('click', function (e) {
@@ -408,12 +568,12 @@
       state.tf = b.dataset.tf;
       renderMtf();
       renderChart();
-      runAnalysis();
+      scheduleAnalysis(true);
     });
   }
 
   function startFeed() {
-    const feed = D.createFeed(Object.keys(CFG.symbols), {
+    feed = D.createFeed(Object.keys(CFG.symbols), {
       tick: onTick,
       status: function (mode) {
         state.feedMode = mode;
@@ -437,19 +597,20 @@
     buildSymbolBar();
     initChart();
     startFeed();
-    
-    D.fetchLatest(Object.keys(CFG.symbols)).then(function (ticks) {
-      ticks.forEach(function (t) { state.ticks[t.symbol] = t; });
-      updateSymbolBarPrices();
-      renderPrice();
-    }).catch(function () {});
 
-    loadAllBars().then(function () {
+    loadAllBars().then(function (results) {
+      if (!results) return;
       D.fetchLatest(Object.keys(CFG.symbols)).then(function (ticks) {
         ticks.forEach(function (t) { state.ticks[t.symbol] = t; });
+        updateSymbolBarPrices();
         renderAll();
-      });
+      }).catch(function () {});
     });
+  }
+
+  function cleanup() {
+    if (chart) { chart.destroy(); chart = null; }
+    if (feed) { feed.stop(); feed = null; }
   }
 
   if (document.readyState === 'loading') {
@@ -457,4 +618,11 @@
   } else {
     init();
   }
+
+  window.addEventListener('beforeunload', cleanup);
+
+  AT.app = {
+    getSignalLog: function () { return state.signalLog.slice(); },
+    getState: function () { return state; }
+  };
 })();

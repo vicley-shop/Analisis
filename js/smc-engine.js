@@ -1,132 +1,253 @@
 window.AT = window.AT || {};
-window.AT.smcEngine = (function() {
+window.AT.smcEngine = (function (I) {
   'use strict';
 
-  const ATR_PERIOD = 14;
-  const SWING_LOOKBACK = 3;
-  const HIGH_CONFLUENCE = 80;
-  const MEDIUM_CONFLUENCE = 50;
+  const DEFAULT_ATR_PERIOD = 14;
+  const DEFAULT_HIGH_CONFLUENCE = 80;
+  const DEFAULT_MEDIUM_CONFLUENCE = 50;
+  const DEFAULT_MIN_CONFIDENCE = 30;
+  const SWEEP_AGAINST_PENALTY = 15;
+  const BOS_WEIGHT_FACTOR = 0.5;
+  const STALE_MSS_FACTOR = 0.5;
 
-  function calculateATR(bars, period) {
-    if (bars.length < period + 1) return null;
-    const trs = [];
-    for (let i = 1; i < bars.length; i++) {
-      const h = bars[i].h, l = bars[i].l, prevC = bars[i - 1].c;
-      trs.push(Math.max(h - l, Math.abs(h - prevC), Math.abs(l - prevC)));
-    }
-    const atrArr = [];
-    let sum = 0;
-    for (let i = 0; i < trs.length; i++) {
-      if (i < period) {
-        sum += trs[i];
-        if (i === period - 1) atrArr.push(sum / period);
-      } else {
-        const prev = atrArr[atrArr.length - 1];
-        atrArr.push((prev * (period - 1) + trs[i]) / period);
-      }
-    }
-    return atrArr;
+  function cfg() {
+    return (window.AT_CONFIG && window.AT_CONFIG.smc) || {};
   }
 
-  function getCurrentAtr(bars) {
-    const arr = calculateATR(bars, ATR_PERIOD);
-    if (!arr || arr.length === 0) return 0;
-    return arr[arr.length - 1];
+  function weights() {
+    const w = cfg().weights || {};
+    return {
+      mss: w.mss != null ? w.mss : 30,
+      sweep: w.sweep != null ? w.sweep : 25,
+      fvg: w.fvg != null ? w.fvg : 15,
+      ob: w.ob != null ? w.ob : 15,
+      ote: w.ote != null ? w.ote : 15
+    };
   }
 
-  function evaluate(bars, direction) {
+  function thresholds() {
+    return {
+      high: cfg().highConfluence != null ? cfg().highConfluence : DEFAULT_HIGH_CONFLUENCE,
+      medium: cfg().mediumConfluence != null ? cfg().mediumConfluence : DEFAULT_MEDIUM_CONFLUENCE
+    };
+  }
+
+  function requireZoneForHigh() {
+    return cfg().requireZoneForHigh !== false;
+  }
+
+  function atrPeriod() {
+    return cfg().atrPeriod || DEFAULT_ATR_PERIOD;
+  }
+
+  function num(v) {
+    return v != null && Number.isFinite(v);
+  }
+
+  function emptyResult(direction, reason) {
+    return {
+      score: 0,
+      label: 'Sin confluencia suficiente',
+      direction: direction || 0,
+      trend: 'Débil',
+      reasons: [reason],
+      breakdown: {},
+      zones: { ob: null, fvg: null, ote: null, allOBs: [], allFVGs: [] },
+      vetoes: [reason],
+      context: {}
+    };
+  }
+
+  function computeAtr(bars) {
+    if (!bars || bars.length < atrPeriod() + 1) return 0;
+    const highs = bars.map(function (b) { return b.h; });
+    const lows = bars.map(function (b) { return b.l; });
+    const closes = bars.map(function (b) { return b.c; });
+    const arr = I.atr(highs, lows, closes, atrPeriod());
+    for (let i = arr.length - 1; i >= 0; i--) {
+      if (num(arr[i]) && arr[i] > 0) return arr[i];
+    }
+    return 0;
+  }
+
+  function evaluateDirection(bars, direction, context, atr, structure, sweeps, obs, fvgs, ote, w) {
     const result = {
       score: 0,
-      label: 'Sin confluencia',
+      label: 'Sin confluencia suficiente',
       direction: direction,
+      trend: 'Débil',
       reasons: [],
-      zones: {},
-      trend: 'Neutral'
+      breakdown: {},
+      zones: { ob: null, fvg: null, ote: null, allOBs: obs, allFVGs: fvgs },
+      vetoes: [],
+      context: context
     };
 
-    if (!bars || bars.length < 50) {
-      result.reasons.push('Historial insuficiente para analizar.');
-      return result;
-    }
-
-    if (direction === 0) {
-      result.reasons.push('Sesgo neutral. No se buscan entradas.');
-      return result;
-    }
-
-    const atr = getCurrentAtr(bars);
-    if (!atr || atr <= 0) {
-      result.reasons.push('Volatilidad (ATR) no disponible.');
-      return result;
-    }
-
-    const structure = window.AT.smc.structure;
-    const liquidity = window.AT.smc.liquidity;
-    const zones = window.AT.smc.zones;
-    const oteMod = window.AT.smc.ote;
-
-    const pivots = structure.findPivots(bars, SWING_LOOKBACK);
-    const mss = structure.detectMSS(bars, pivots);
-    const sweeps = liquidity.detectSweeps(bars, pivots, direction, atr);
-    const obs = zones.detectOrderBlocks(bars, calculateATR(bars, ATR_PERIOD), direction);
-    const fvgs = zones.detectFVG(bars, direction);
-    const ote = oteMod.calculateOTE(bars, pivots, direction);
-
-    const currentPrice = bars[bars.length - 1].c;
+    const lastIdx = bars.length - 1;
+    const currentPrice = bars[lastIdx].c;
     let score = 0;
 
-    if (mss && mss.direction === direction) {
-      score += 25;
-      result.reasons.push('✅ Cambio de Estructura (MSS) confirmado a favor de la tendencia.');
+    const mss = structure.mss;
+    const mssMatches = mss && mss.direction === direction;
+    if (mssMatches) {
+      const base = mss.type && mss.type.indexOf('MSS_') === 0 ? w.mss : w.mss * BOS_WEIGHT_FACTOR;
+      const freshness = mss.fresh !== false ? 1 : STALE_MSS_FACTOR;
+      const weighted = base * freshness;
+      score += weighted;
+      result.breakdown.mss = {
+        value: base,
+        weighted: weighted,
+        reason: (mss.type || 'MSS') + ' a favor (barsSince ' + mss.barsSince + ', fresh: ' + (mss.fresh !== false) + ')'
+      };
+      result.reasons.push('✅ ' + mss.type + ' confirmado a favor (hace ' + mss.barsSince + ' velas).');
+    } else if (mss) {
+      result.breakdown.mss = { value: 0, weighted: 0, reason: 'Estructura opuesta o caducada' };
+      result.reasons.push('❌ Estructura no alineada con la dirección analizada.');
     } else {
-      result.reasons.push('❌ Sin Cambio de Estructura (MSS) reciente.');
+      result.breakdown.mss = { value: 0, weighted: 0, reason: 'Sin MSS/BOS reciente' };
+      result.reasons.push('❌ Sin cambio de estructura reciente.');
     }
 
-    if (sweeps.length > 0) {
-      score += 25;
-      result.reasons.push('✅ Barrido de liquidez detectado (trampa de stops).');
+    const sweepFavor = sweeps.find(function (s) { return s.direction === direction; });
+    if (sweepFavor) {
+      const rejection = num(sweepFavor.rejectionRatio) ? sweepFavor.rejectionRatio : 1;
+      const weighted = w.sweep * rejection;
+      score += weighted;
+      result.breakdown.sweep = {
+        value: w.sweep,
+        weighted: weighted,
+        rejectionRatio: rejection,
+        reason: 'Sweep a favor con rechazo ' + (rejection * 100).toFixed(0) + '%'
+      };
+      result.reasons.push('✅ Barrido de liquidez a favor (rechazo ' + (rejection * 100).toFixed(0) + '%).');
     } else {
-      result.reasons.push('❌ Sin barrido de liquidez reciente.');
+      result.breakdown.sweep = { value: 0, weighted: 0, reason: 'Sin sweep a favor' };
+      result.reasons.push('❌ Sin barrido de liquidez a favor.');
     }
 
-    const activeFvg = fvgs.find(function(f) {
-      return currentPrice >= f.bottom && currentPrice <= f.top;
-    });
+    const sweepAgainst = sweeps.find(function (s) { return s.direction !== direction; });
+    if (sweepAgainst) {
+      const rejection = num(sweepAgainst.rejectionRatio) ? sweepAgainst.rejectionRatio : 0.5;
+      const penalty = SWEEP_AGAINST_PENALTY * rejection;
+      score -= penalty;
+      result.breakdown.penalty = {
+        value: penalty,
+        rejectionRatio: rejection,
+        reason: 'Sweep en contra con rechazo ' + (rejection * 100).toFixed(0) + '%'
+      };
+      result.vetoes.push('Sweep en contra del sesgo (penalización ' + penalty.toFixed(0) + ' pts).');
+    }
 
-    if (activeFvg) {
-      score += 20;
+    const activeFvg = window.AT.smc.zones.findActiveZone(fvgs, currentPrice);
+    if (activeFvg && activeFvg.direction === direction) {
+      const strength = num(activeFvg.strength) ? activeFvg.strength : 1;
+      const weighted = w.fvg * strength;
+      score += weighted;
       result.zones.fvg = activeFvg;
-      result.reasons.push('✅ Precio dentro de un Fair Value Gap (desequilibrio).');
+      result.breakdown.fvg = { value: w.fvg, weighted: weighted, strength: strength, reason: 'FVG activo' };
+      result.reasons.push('✅ Precio dentro de un FVG (' + (strength * 100).toFixed(0) + '% de fuerza).');
     } else {
+      result.breakdown.fvg = { value: 0, weighted: 0, reason: 'Precio fuera de FVG' };
       result.reasons.push('❌ Precio fuera de un FVG relevante.');
     }
 
-    const activeOb = obs.find(function(o) {
-      return currentPrice >= o.bottom && currentPrice <= o.top;
-    });
-
-    if (activeOb) {
-      score += 15;
+    const activeOb = window.AT.smc.zones.findActiveZone(obs, currentPrice);
+    if (activeOb && activeOb.direction === direction) {
+      const strength = num(activeOb.strength) ? activeOb.strength : 1;
+      const weighted = w.ob * strength;
+      score += weighted;
       result.zones.ob = activeOb;
-      result.reasons.push('✅ Precio dentro de un Order Block institucional.');
+      result.breakdown.ob = { value: w.ob, weighted: weighted, strength: strength, reason: 'OB activo' };
+      result.reasons.push('✅ Precio dentro de un Order Block (' + (strength * 100).toFixed(0) + '% de fuerza).');
     } else {
+      result.breakdown.ob = { value: 0, weighted: 0, reason: 'Precio fuera de OB' };
       result.reasons.push('❌ Precio fuera de un Order Block relevante.');
     }
 
-    if (ote && currentPrice >= ote.bottom && currentPrice <= ote.top) {
-      score += 15;
+    const oteActive = ote && ote.direction === direction && ote.state === 'active';
+    if (oteActive) {
+      const dev = num(ote.deviation) ? Math.min(1, Math.abs(ote.deviation)) : 0;
+      const proximity = 1 - dev;
+      const weighted = w.ote * proximity;
+      score += weighted;
       result.zones.ote = ote;
-      result.reasons.push('✅ Precio en la Zona Dorada de Fibonacci (OTE 61.8% - 79%).');
+      result.breakdown.ote = {
+        value: w.ote,
+        weighted: weighted,
+        deviation: ote.deviation,
+        state: ote.state,
+        reason: 'OTE activa (proximidad ' + (proximity * 100).toFixed(0) + '%)'
+      };
+      result.reasons.push('✅ Precio en zona OTE (' + (proximity * 100).toFixed(0) + '% del sweet spot).');
+    } else if (ote && ote.direction === direction && ote.state === 'pending') {
+      const weighted = w.ote * 0.3;
+      score += weighted;
+      result.breakdown.ote = { value: w.ote, weighted: weighted, state: ote.state, reason: 'OTE pendiente' };
+      result.reasons.push('🟡 OTE pendiente (aún sin retroceso al sweet spot).');
     } else {
+      result.breakdown.ote = { value: 0, weighted: 0, reason: 'OTE no activa para esta dirección' };
       result.reasons.push('❌ Precio fuera de la zona OTE.');
     }
 
-    result.score = Math.min(100, score);
+    score = Math.max(0, Math.min(100, score));
+    result.score = score;
 
-    if (result.score >= HIGH_CONFLUENCE) {
+    const zonesActive = !!result.zones.fvg || !!result.zones.ob || !!result.zones.ote;
+    const structureActive = mssMatches;
+
+    result.zonesActive = zonesActive;
+    result.structureActive = structureActive;
+
+    return result;
+  }
+
+  function applyVetoesAndGrade(result) {
+    const th = thresholds();
+    const ctx = result.context || {};
+    const sessionActive = ctx.sessionActive !== false;
+    const requireActive = (window.AT_CONFIG && window.AT_CONFIG.sessions && window.AT_CONFIG.sessions.requireActive) || false;
+    const confidence = num(ctx.confidence) ? ctx.confidence : 100;
+    const minConfidence = DEFAULT_MIN_CONFIDENCE;
+
+    if (requireActive && !sessionActive) {
+      result.vetoes.push('Fuera de sesión activa.');
+      result.score = 0;
+    }
+
+    if (confidence < minConfidence) {
+      result.vetoes.push('Confianza del consenso insuficiente (' + confidence.toFixed(0) + '%).');
+      result.score = 0;
+    }
+
+    if (!result.structureActive) {
+      result.vetoes.push('Sin estructura (MSS/BOS) alineada.');
+    }
+
+    if (!result.zonesActive) {
+      result.vetoes.push('Sin zona de reacción (FVG/OB/OTE).');
+    }
+
+    let grade;
+    if (result.score >= th.high) {
+      if (requireZoneForHigh() && !result.zonesActive) {
+        grade = 'Moderada';
+        result.vetoes.push('Score alto pero sin zona de reacción: rebajado a Moderada.');
+      } else {
+        grade = 'Alta';
+      }
+    } else if (result.score >= th.medium && result.structureActive) {
+      grade = 'Moderada';
+    } else if (result.score >= th.medium) {
+      grade = 'Débil';
+      result.vetoes.push('Score medio sin estructura: rebajado a Débil.');
+    } else {
+      grade = 'Débil';
+    }
+
+    if (grade === 'Alta') {
       result.label = 'ENTRADA DE ALTA PROBABILIDAD';
       result.trend = 'Fuerte';
-    } else if (result.score >= MEDIUM_CONFLUENCE) {
+    } else if (grade === 'Moderada') {
       result.label = 'Entrada Moderada';
       result.trend = 'Media';
     } else {
@@ -137,7 +258,63 @@ window.AT.smcEngine = (function() {
     return result;
   }
 
+  function evaluate(bars, direction, context) {
+    context = context || {};
+    direction = direction === 1 || direction === -1 ? direction : 0;
+
+    if (!bars || bars.length < 50) {
+      return emptyResult(direction, 'Historial insuficiente para analizar.');
+    }
+
+    const atr = computeAtr(bars);
+    if (!(atr > 0)) {
+      return emptyResult(direction, 'Volatilidad (ATR) no disponible.');
+    }
+
+    const structureModule = window.AT.smc.structure;
+    const liquidity = window.AT.smc.liquidity;
+    const zones = window.AT.smc.zones;
+    const oteModule = window.AT.smc.ote;
+
+    if (!structureModule || !liquidity || !zones || !oteModule) {
+      return emptyResult(direction, 'Módulos SMC no disponibles.');
+    }
+
+    const pivots = structureModule.findPivots(bars);
+    const structure = {
+      pivots: pivots,
+      mss: structureModule.detectMSS(bars, pivots)
+    };
+
+    const sweeps = liquidity.detectSweeps(bars, pivots, atr, { allowBidirectional: true });
+    const obs = zones.detectOrderBlocks(bars, atr, null);
+    const fvgs = zones.detectFVG(bars, atr, null);
+    const ote = direction !== 0
+      ? oteModule.calculateOTE(bars, pivots, direction, atr)
+      : null;
+
+    const w = weights();
+
+    if (direction === 1 || direction === -1) {
+      const res = evaluateDirection(bars, direction, context, atr, structure, sweeps, obs, fvgs, ote, w);
+      return applyVetoesAndGrade(res);
+    }
+
+    const oteLong = oteModule.calculateOTE(bars, pivots, 1, atr);
+    const oteShort = oteModule.calculateOTE(bars, pivots, -1, atr);
+
+    const resLong = evaluateDirection(bars, 1, context, atr, structure, sweeps, obs, fvgs, oteLong, w);
+    const resShort = evaluateDirection(bars, -1, context, atr, structure, sweeps, obs, fvgs, oteShort, w);
+
+    let winner;
+    if (resLong.score > resShort.score) winner = resLong;
+    else if (resShort.score > resLong.score) winner = resShort;
+    else return emptyResult(0, 'Evaluación bidireccional sin ventaja: ningún lado supera al otro.');
+
+    return applyVetoesAndGrade(winner);
+  }
+
   return {
     evaluate: evaluate
   };
-})();
+})(window.AT.indicators);
