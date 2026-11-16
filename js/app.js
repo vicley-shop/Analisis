@@ -21,7 +21,9 @@
     analysisTimer: null,
     lastAnalysisAt: 0,
     signalLog: [],
-    lastVerdictState: 'wait'
+    lastVerdictState: 'wait',
+    currentTool: 'cursor',
+    drawMenuOpen: false
   };
 
   let chart = null;
@@ -89,9 +91,14 @@
       : 'Esperando precio…';
 
     const sb = $('sessionBadge');
-    const active = state.analysis ? state.analysis.sessionActive : false;
-    sb.textContent = active ? '✓ Sesión activa' : '✗ Fuera de sesión';
-    sb.className = 'session-badge ' + (active ? 'ok' : 'bad');
+    const a = state.analysis;
+    const open = a ? a.marketOpen : false;
+    const label = a ? a.sessionLabel : '—';
+    sb.textContent = label;
+    sb.className = 'session-badge ' + (open ? 'ok' : 'bad');
+    sb.title = open
+      ? (a && a.highLiquidity ? 'Mercado abierto en ventana de máxima liquidez' : 'Mercado abierto, liquidez reducida')
+      : 'Mercado cerrado para este instrumento';
   }
 
   function renderGauge() {
@@ -140,7 +147,7 @@
       const r = a.verdictRisk;
       text += ' · Stop ' + fmt(state.symbol, r.stop) + ' · Target ' + fmt(state.symbol, r.target);
     }
-    if (!a.sessionActive) {
+    if (!a.marketOpen) {
       text = '⚠️ ' + text;
     }
     reason.textContent = text;
@@ -155,7 +162,7 @@
     if (!smc) {
       scoreEl.textContent = '0%';
       barEl.style.width = '0%';
-      barEl.style.backgroundColor = 'var(--ema2)';
+      barEl.style.backgroundColor = 'var(--accent)';
       reasonsEl.innerHTML = '<li class="muted">Esperando datos...</li>';
       return;
     }
@@ -212,10 +219,7 @@
       return;
     }
 
-    const alerts = (a.alerts || []).slice();
-    if (!a.sessionActive) {
-      alerts.unshift({ type: 'warn', text: 'Fuera de sesión activa. Baja liquidez, spreads más anchos.' });
-    }
+    const alerts = a.alerts || [];
 
     if (alerts.length === 0) {
       card.hidden = true;
@@ -240,11 +244,8 @@
     }
     tEl.textContent = trendTxt;
 
-    const oEl = $('macroMomentum');
-    oEl.textContent = a.macroMomentum || '—';
-
-    const vEl = $('macroVolatility');
-    vEl.textContent = a.macroVolatility || '—';
+    $('macroMomentum').textContent = a.macroMomentum || '—';
+    $('macroVolatility').textContent = a.macroVolatility || '—';
 
     const sEl = $('macroStructure');
     let structTxt = 'Lateral';
@@ -313,7 +314,7 @@
     const bars = state.bars[state.tf] || [];
     const inst = CFG.symbols[state.symbol];
     if (!inst) return;
-    chart.setData(bars, { tf: state.tf, digits: inst.digits });
+    chart.setData(bars, { tf: state.tf, digits: inst.digits, symbol: state.symbol });
 
     if (state.smcResult && state.smcResult.zones) {
       chart.setZones(state.smcResult.zones);
@@ -369,7 +370,7 @@
       const closedBars = entryBarsRaw.slice(0, -1);
       const smcCtx = {
         confidence: res.confidence,
-        sessionActive: res.sessionActive,
+        marketOpen: res.marketOpen,
         entryTf: entryTf
       };
       state.smcResult = SMC.evaluate(closedBars, res.overallDirection, smcCtx);
@@ -545,8 +546,8 @@
     $('zoomOut').addEventListener('click', function () { chart.zoom(1.25); });
     $('zoomReset').addEventListener('click', function () { chart.reset(); });
 
-    const chartCard = document.querySelector('.chart-card');
     $('chartFullscreen').addEventListener('click', function () {
+      const chartCard = $('chartCard');
       if (!document.fullscreenElement) {
         if (chartCard.requestFullscreen) {
           chartCard.requestFullscreen().catch(function (err) {
@@ -559,8 +560,16 @@
     });
 
     document.addEventListener('fullscreenchange', function () {
+      updateDrawVisibility();
       if (chart) chart.resize();
     });
+    document.addEventListener('webkitfullscreenchange', function () {
+      updateDrawVisibility();
+      if (chart) chart.resize();
+    });
+
+    initDrawingMenu();
+    initDrawingShortcuts();
 
     $('mtf').addEventListener('click', function (e) {
       const b = e.target.closest('button[data-tf]');
@@ -569,6 +578,157 @@
       renderMtf();
       renderChart();
       scheduleAnalysis(true);
+    });
+  }
+
+  function isFullscreen() {
+    return document.fullscreenElement === $('chartCard') ||
+           document.webkitFullscreenElement === $('chartCard');
+  }
+
+  function updateDrawVisibility() {
+    const toggle = $('drawToggle');
+    if (!toggle) return;
+    const fs = isFullscreen();
+    const enabled = CFG.drawing && CFG.drawing.enabled !== false;
+
+    if (fs && enabled) {
+      toggle.hidden = false;
+    } else {
+      toggle.hidden = true;
+      closeDrawingMenu();
+      setTool('cursor');
+    }
+  }
+
+  function openDrawingMenu() {
+    const menu = $('drawingMenu');
+    const toggle = $('drawToggle');
+    if (!menu || !toggle) return;
+    menu.hidden = false;
+    toggle.setAttribute('aria-expanded', 'true');
+    state.drawMenuOpen = true;
+  }
+
+  function closeDrawingMenu() {
+    const menu = $('drawingMenu');
+    const toggle = $('drawToggle');
+    if (!menu || !toggle) return;
+    menu.hidden = true;
+    toggle.setAttribute('aria-expanded', 'false');
+    state.drawMenuOpen = false;
+  }
+
+  function toggleDrawingMenu() {
+    if (state.drawMenuOpen) closeDrawingMenu();
+    else openDrawingMenu();
+  }
+
+  function setTool(tool) {
+    state.currentTool = tool;
+
+    const menu = $('drawingMenu');
+    if (menu) {
+      Array.prototype.forEach.call(menu.querySelectorAll('[data-tool]'), function (btn) {
+        const isActive = btn.dataset.tool === tool;
+        if (isActive) btn.classList.add('active'); else btn.classList.remove('active');
+        btn.setAttribute('aria-checked', isActive ? 'true' : 'false');
+      });
+    }
+
+    const toggle = $('drawToggle');
+    if (toggle) {
+      if (tool === 'cursor') toggle.classList.remove('active');
+      else toggle.classList.add('active');
+    }
+
+    if (chart && typeof chart.setTool === 'function') {
+      chart.setTool(tool);
+    }
+  }
+
+  function handleUndo() {
+    if (chart && typeof chart.undo === 'function') {
+      chart.undo();
+    }
+  }
+
+  function handleClear() {
+    if (chart && typeof chart.clearDrawings === 'function') {
+      chart.clearDrawings();
+    }
+  }
+
+  function initDrawingMenu() {
+    const toggle = $('drawToggle');
+    const menu = $('drawingMenu');
+    if (!toggle || !menu) return;
+
+    toggle.addEventListener('click', function (e) {
+      e.stopPropagation();
+      toggleDrawingMenu();
+    });
+
+    menu.addEventListener('click', function (e) {
+      const toolBtn = e.target.closest('[data-tool]');
+      if (toolBtn) {
+        const tool = toolBtn.dataset.tool;
+        setTool(tool);
+        if (tool !== 'cursor') closeDrawingMenu();
+        return;
+      }
+      if (e.target.closest('#drawUndo')) {
+        handleUndo();
+        return;
+      }
+      if (e.target.closest('#drawClear')) {
+        handleClear();
+        closeDrawingMenu();
+        return;
+      }
+    });
+
+    document.addEventListener('click', function (e) {
+      if (!state.drawMenuOpen) return;
+      if (menu.contains(e.target)) return;
+      if (toggle.contains(e.target)) return;
+      closeDrawingMenu();
+    });
+  }
+
+  function initDrawingShortcuts() {
+    document.addEventListener('keydown', function (e) {
+      if (!isFullscreen()) return;
+
+      const tag = (e.target && e.target.tagName) || '';
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target && e.target.isContentEditable)) return;
+
+      if (e.key === 'Escape') {
+        if (state.drawMenuOpen) {
+          closeDrawingMenu();
+          e.preventDefault();
+          return;
+        }
+        if (state.currentTool !== 'cursor') {
+          setTool('cursor');
+          e.preventDefault();
+        }
+        return;
+      }
+
+      if (e.key === 'd' || e.key === 'D') {
+        if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+          e.preventDefault();
+          toggleDrawingMenu();
+        }
+        return;
+      }
+
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
+        e.preventDefault();
+        handleUndo();
+        return;
+      }
     });
   }
 
@@ -609,7 +769,10 @@
   }
 
   function cleanup() {
-    if (chart) { chart.destroy(); chart = null; }
+    if (chart) {
+      if (typeof chart.destroy === 'function') chart.destroy();
+      chart = null;
+    }
     if (feed) { feed.stop(); feed = null; }
   }
 

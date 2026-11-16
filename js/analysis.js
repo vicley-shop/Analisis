@@ -12,6 +12,15 @@
     strong_sell: 'Venta fuerte'
   };
 
+  const SESSION_LABELS = {
+    closed: 'Mercado cerrado',
+    alwaysOpen: 'Mercado 24/7',
+    highLiquidity: 'Alta liquidez (Londres-NY)',
+    european: 'Sesión europea',
+    american: 'Sesión americana',
+    asian: 'Sesión asiática'
+  };
+
   function num(v) {
     return v != null && Number.isFinite(v);
   }
@@ -38,21 +47,67 @@
     return bars;
   }
 
-  function getSessionState(now) {
-    const sess = (cfg().sessions) || {};
-    const combined = sess.combined || { startGmt: 7, endGmt: 21 };
-    const hourGmt = now.getUTCHours() + now.getUTCMinutes() / 60;
-    let start = combined.startGmt;
-    let end = combined.endGmt;
-    if (sess.dstAdjust) {
-      const y = now.getUTCFullYear();
-      const march = new Date(Date.UTC(y, 2, 31));
-      while (march.getUTCDay() !== 0) march.setUTCDate(march.getUTCDate() - 1);
-      const october = new Date(Date.UTC(y, 9, 31));
-      while (october.getUTCDay() !== 0) october.setUTCDate(october.getUTCDate() - 1);
-      if (now >= march && now < october) { start -= 1; end -= 1; }
+  function getTradingHours(family) {
+    const th = cfg().tradingHours || {};
+    const fallback = { alwaysOpen: false, open: { day: 0, hour: 22 }, close: { day: 5, hour: 22 } };
+    return th[family] || th.forex || fallback;
+  }
+
+  function getMarketState(symbol, now) {
+    const inst = (cfg().symbols || {})[symbol];
+    if (!inst) {
+      return { open: false, family: 'unknown', alwaysOpen: false, currentMin: 0, openMin: 0, closeMin: 0 };
     }
-    return { active: hourGmt >= start && hourGmt < end, hour: hourGmt };
+    const family = inst.family || 'forex';
+    const th = getTradingHours(family);
+
+    if (th.alwaysOpen) {
+      return { open: true, family: family, alwaysOpen: true, currentMin: 0, openMin: 0, closeMin: 0 };
+    }
+
+    const dow = now.getUTCDay();
+    const hour = now.getUTCHours();
+    const minute = now.getUTCMinutes();
+
+    const currentMin = dow * 24 * 60 + hour * 60 + minute;
+    const openMin = (th.open.day * 24 * 60) + (th.open.hour * 60);
+    const closeMin = (th.close.day * 24 * 60) + (th.close.hour * 60);
+
+    const open = currentMin >= openMin && currentMin < closeMin;
+
+    return {
+      open: open,
+      family: family,
+      alwaysOpen: false,
+      currentMin: currentMin,
+      openMin: openMin,
+      closeMin: closeMin
+    };
+  }
+
+  function getLiquidityState(now) {
+    const sess = cfg().sessions || {};
+    const combined = sess.combined || { startGmt: 13, endGmt: 16 };
+    const london = sess.london || { startGmt: 8, endGmt: 16 };
+    const ny = sess.newYork || { startGmt: 13, endGmt: 21 };
+
+    const hour = now.getUTCHours() + now.getUTCMinutes() / 60;
+
+    return {
+      overlap: hour >= combined.startGmt && hour < combined.endGmt,
+      london: hour >= london.startGmt && hour < london.endGmt,
+      newYork: hour >= ny.startGmt && hour < ny.endGmt,
+      hour: hour
+    };
+  }
+
+  function getSessionLabel(marketState, liquidityState) {
+    if (!marketState.open) return SESSION_LABELS.closed;
+    if (marketState.alwaysOpen) return SESSION_LABELS.alwaysOpen;
+    if (liquidityState.overlap) return SESSION_LABELS.highLiquidity;
+    if (liquidityState.london) return SESSION_LABELS.european;
+    if (liquidityState.newYork) return SESSION_LABELS.american;
+    return SESSION_LABELS.asian;
   }
 
   function analyzeTimeframe(bars) {
@@ -228,7 +283,7 @@
     return { stop: stop, target: target, rr: rr, valid: rr >= minRR };
   }
 
-  function emptyResult(reason) {
+  function emptyResult(reason, sessionLabel) {
     return {
       consensusScore: 0,
       consensusLabel: 'neutral',
@@ -246,7 +301,10 @@
       verdictLabel: 'ESPERAR',
       verdictReason: reason || 'Datos insuficientes.',
       verdictRisk: null,
-      sessionActive: false,
+      marketOpen: false,
+      highLiquidity: false,
+      sessionLabel: sessionLabel || SESSION_LABELS.closed,
+      symbolFamily: 'unknown',
       entryTf: null,
       conclusion: reason || 'Datos insuficientes. Se necesitan al menos dos temporalidades con historial suficiente.'
     };
@@ -260,6 +318,12 @@
     const minValidTfs = consensusCfg.minimumValidTfs || 2;
     const tieBreak = consensusCfg.tieBreak || 'higher_tf';
     const entryTf = opts.currentTf || (c.timeframes && c.timeframes.entry) || '1h';
+    const symbol = opts.symbol || 'XAUUSD';
+
+    const now = new Date();
+    const marketState = getMarketState(symbol, now);
+    const liquidityState = getLiquidityState(now);
+    const sessionLabel = getSessionLabel(marketState, liquidityState);
 
     const tfs = Object.keys(barsByTf || {});
     const perTf = {};
@@ -278,7 +342,7 @@
     });
 
     if (valid.length < minValidTfs) {
-      return emptyResult('Datos insuficientes: se necesitan al menos ' + minValidTfs + ' temporalidades con historial suficiente.');
+      return emptyResult('Datos insuficientes: se necesitan al menos ' + minValidTfs + ' temporalidades con historial suficiente.', sessionLabel);
     }
 
     let buyVotes = 0;
@@ -384,13 +448,15 @@
       }
     }
 
-    const session = getSessionState(new Date());
-    const requireActive = c.sessions && c.sessions.requireActive;
+    if (marketState.open && !liquidityState.overlap && !marketState.alwaysOpen) {
+      alerts.push({ type: 'info', text: 'Liquidez reducida fuera del overlap Londres-NY. Spread puede ser más ancho.' });
+    }
+
     const currentPrice = valid[0].data.price;
     const levels = findNearestLevels(entryBars, currentPrice, 3);
     const risk = overallDirection !== 0 ? suggestRisk(currentPrice, levels.support, levels.resistance, atrVal, overallDirection) : null;
 
-    const digits = (c.symbols && opts.symbol && c.symbols[opts.symbol] && c.symbols[opts.symbol].digits) || 2;
+    const digits = (c.symbols && c.symbols[symbol] && c.symbols[symbol].digits) || 2;
     const fmt = function (p) { return num(p) ? p.toFixed(digits) : '—'; };
 
     let verdictState = 'wait';
@@ -399,8 +465,8 @@
 
     const hasDanger = alerts.some(function (a) { return a.type === 'danger'; });
 
-    if (requireActive && !session.active) {
-      verdictReason = 'Fuera de sesión activa. Operar con baja liquidez amplía el spread y degrada la ejecución.';
+    if (!marketState.open) {
+      verdictReason = 'Mercado cerrado (' + marketState.family + '). No se opera hasta la próxima apertura.';
     } else if (overallDirection === 0) {
       verdictReason = 'Temporalidades empatadas. Sin sesgo direccional claro.';
     } else if (consensusLabel === 'neutral') {
@@ -436,7 +502,9 @@
     const conclusionParts = [];
     const dirText = overallDirection === 1 ? 'alcista' : overallDirection === -1 ? 'bajista' : 'neutral';
 
-    if (consensusLabel === 'strong_buy' || consensusLabel === 'strong_sell') {
+    if (!marketState.open) {
+      conclusionParts.push('Mercado cerrado para ' + symbol + ' (' + marketState.family + '). Sin operativa hasta apertura.');
+    } else if (consensusLabel === 'strong_buy' || consensusLabel === 'strong_sell') {
       conclusionParts.push('Sesgo ' + dirText + ' fuerte con consenso del ' + consensusScore.toFixed(0) + '% y confianza del ' + confidence.toFixed(0) + '%.');
     } else if (consensusLabel === 'buy' || consensusLabel === 'sell') {
       conclusionParts.push('Sesgo ' + dirText + ' moderado (consenso ' + consensusScore.toFixed(0) + '%, confianza ' + confidence.toFixed(0) + '%).');
@@ -444,12 +512,14 @@
       conclusionParts.push('Temporalidades divididas o sin fuerza (consenso ' + consensusScore.toFixed(0) + '%). Mercado en rango o transición.');
     }
 
-    conclusionParts.push('Fuerza a favor: ' + macroTrend + ' (ADX ' + avgAdxAligned.toFixed(1) + ').');
-    if (opposedCount > 0 && avgAdxOpposed > 0) {
-      conclusionParts.push('Fuerza en contra: ADX ' + avgAdxOpposed.toFixed(1) + '.');
+    if (marketState.open) {
+      conclusionParts.push('Fuerza a favor: ' + macroTrend + ' (ADX ' + avgAdxAligned.toFixed(1) + ').');
+      if (opposedCount > 0 && avgAdxOpposed > 0) {
+        conclusionParts.push('Fuerza en contra: ADX ' + avgAdxOpposed.toFixed(1) + '.');
+      }
+      if (macroMomentum !== '—') conclusionParts.push('Momentum en ' + entryTf.toUpperCase() + ': ' + macroMomentum + '.');
+      if (alerts.length > 0) conclusionParts.push('⚠️ ' + alerts.length + ' señal(es) detectada(s).');
     }
-    if (macroMomentum !== '—') conclusionParts.push('Momentum en ' + entryTf.toUpperCase() + ': ' + macroMomentum + '.');
-    if (alerts.length > 0) conclusionParts.push('⚠️ ' + alerts.length + ' señal(es) de agotamiento detectada(s).');
 
     return {
       consensusScore: consensusScore,
@@ -468,7 +538,10 @@
       verdictLabel: verdictLabel,
       verdictReason: verdictReason,
       verdictRisk: risk,
-      sessionActive: session.active,
+      marketOpen: marketState.open,
+      highLiquidity: liquidityState.overlap,
+      sessionLabel: sessionLabel,
+      symbolFamily: marketState.family,
       entryTf: entryTf,
       conclusion: conclusionParts.join(' ')
     };
@@ -476,6 +549,10 @@
 
   return {
     analyze: analyze,
-    LABELS: LABELS
+    LABELS: LABELS,
+    SESSION_LABELS: SESSION_LABELS,
+    getMarketState: getMarketState,
+    getLiquidityState: getLiquidityState,
+    getSessionLabel: getSessionLabel
   };
 }));
