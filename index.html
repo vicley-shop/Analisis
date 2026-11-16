@@ -4,16 +4,16 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="dark">
-  <meta name="theme-color" content="#0b0f14">
+  <meta name="theme-color" content="#05070b">
   <meta name="description" content="Market Consensus PRO — Análisis técnico multi-temporal, confluencia SMC y gestión de riesgo institucional.">
   <meta name="format-detection" content="telephone=no">
   <meta name="referrer" content="strict-origin-when-cross-origin">
   <title>Market Consensus PRO</title>
   <link rel="stylesheet" href="css/style.css">
   <style>
-    .skip-link { position: absolute; top: -100px; left: 10px; z-index: 9999; padding: 12px; background: #22c55e; color: #06110a; border-radius: 8px; font-weight: 700; }
+    .skip-link { position: absolute; top: -100px; left: 10px; z-index: 9999; padding: 12px; background: #4f9cf9; color: #05070b; border-radius: 8px; font-weight: 700; }
     .skip-link:focus { top: 10px; }
-    button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid #22c55e; outline-offset: 3px; }
+    button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid #4f9cf9; outline-offset: 3px; }
     [hidden] { display: none !important; }
     .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
   </style>
@@ -23,36 +23,57 @@
 <a class="skip-link" href="#mainContent">Saltar al contenido</a>
 
 <noscript>
-  <div style="padding: 24px; text-align: center; color: #e5e7eb; background: #0b0f14; min-height: 100vh; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 12px;">
+  <div style="padding: 24px; text-align: center; color: #e6edf3; background: #05070b; min-height: 100vh; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 12px;">
     <h1 style="margin: 0; font-size: 20px;">Market Consensus PRO</h1>
     <p style="margin: 0; max-width: 480px;">Este panel requiere JavaScript habilitado para cargar datos de mercado, calcular el consenso multi-temporal y renderizar el gráfico.</p>
   </div>
 </noscript>
 
 <header class="top" role="banner">
-  <div class="brand">
-    <h1 class="brand-title">Market Consensus PRO</h1>
-    <span class="status">
+  <div class="top-inner">
+    <h1 class="brand">
+      <span class="brand-mark" aria-hidden="true">M</span>
+      <span class="brand-text">
+        <strong>Market Consensus</strong>
+        <span class="brand-pro">PRO</span>
+      </span>
+    </h1>
+    <div class="symbols" id="symbolBar" role="group" aria-label="Seleccionar mercado"></div>
+    <div class="status">
       <span class="dot" id="statusDot"></span>
       <span id="statusText" role="status" aria-live="polite">Conectando…</span>
-    </span>
+    </div>
   </div>
-  <div class="symbols" id="symbolBar" role="group" aria-label="Seleccionar mercado"></div>
 </header>
 
-<main id="mainContent" role="main">
+<main id="mainContent" class="dashboard" role="main">
 
-  <div class="card price-card">
-    <div class="price-row">
-      <div id="priceBig" class="price-big">—</div>
-      <div id="priceChg" class="price-chg"></div>
+  <section class="price-card card" aria-labelledby="price-label">
+    <header class="card-head">
+      <span class="card-label" id="price-label">Precio</span>
+      <span id="sessionBadge" class="session-badge neutral">—</span>
+    </header>
+    <div id="priceBig" class="price-big">—</div>
+    <div class="price-meta">
+      <span id="priceChg" class="price-chg"></span>
+      <span id="priceSub" class="price-sub"></span>
     </div>
-    <div id="priceSub" class="muted small"></div>
-    <div id="sessionBadge" class="session-badge neutral">—</div>
-  </div>
+  </section>
 
-  <div class="card gauge-card">
-    <h2>Consenso Multi-Temporal</h2>
+  <section class="verdict-card card" id="verdictCard" aria-labelledby="verdict-label">
+    <header class="card-head">
+      <span class="card-label" id="verdict-label">Veredicto de operación</span>
+    </header>
+    <div role="status" aria-live="polite" class="verdict-content">
+      <div id="verdictBadge" class="verdict-badge wait">ESPERAR</div>
+      <p id="verdictReason" class="verdict-reason">Analizando condiciones de mercado...</p>
+    </div>
+  </section>
+
+  <section class="gauge-card card" aria-labelledby="gauge-label-title">
+    <header class="card-head">
+      <span class="card-label" id="gauge-label-title">Consenso multi-temporal</span>
+    </header>
     <svg id="gaugeSvg" viewBox="0 0 200 112" role="img" aria-label="Medidor de consenso entre temporalidades">
       <path class="g g1" d="M 20 100 A 80 80 0 0 1 35.28 52.98"/>
       <path class="g g2" d="M 35.28 52.98 A 80 80 0 0 1 75.28 23.92"/>
@@ -65,87 +86,108 @@
       </g>
     </svg>
     <div id="gaugeLabel" class="gauge-label neutral">—</div>
-    <div id="gaugeScore" class="muted small center"></div>
-  </div>
+    <div id="gaugeScore" class="gauge-score"></div>
+  </section>
 
-  <div class="card verdict-card" id="verdictCard">
-    <h2>Veredicto de Operación</h2>
-    <div role="status" aria-live="polite">
-      <div id="verdictBadge" class="verdict-badge wait">ESPERAR</div>
-      <p id="verdictReason" class="verdict-reason">Analizando condiciones de mercado...</p>
-    </div>
-  </div>
-
-  <div class="card smc-card" id="smcCard">
-    <h2>Análisis Institucional (SMC)</h2>
-    <div class="smc-header">
-      <span class="muted small">Confluencia</span>
+  <section class="smc-card card" id="smcCard" aria-labelledby="smc-label">
+    <header class="card-head">
+      <span class="card-label" id="smc-label">Análisis institucional (SMC)</span>
       <strong id="smcScore" class="smc-score">0%</strong>
-    </div>
+    </header>
     <div class="smc-bar-bg" aria-hidden="true">
       <div id="smcBarFill" class="smc-bar-fill" style="width: 0%"></div>
     </div>
     <ul id="smcReasons" class="smc-reasons">
       <li class="muted">Esperando datos...</li>
     </ul>
-  </div>
+  </section>
 
-  <div class="card alert-card" id="alertCard" hidden>
-    <h2>⚠️ Alertas de Agotamiento</h2>
-    <ul id="alertList" class="alert-list" role="alert" aria-live="assertive"></ul>
-  </div>
-
-  <div class="metrics-grid">
+  <div class="metrics-grid" role="group" aria-label="Métricas macro">
     <div class="card metric-card">
-      <span class="muted small">Tendencia (ADX alineado)</span>
+      <span class="card-label">Tendencia</span>
       <strong id="macroTrend" class="metric-val">—</strong>
     </div>
     <div class="card metric-card">
-      <span class="muted small">Momentum</span>
+      <span class="card-label">Momentum</span>
       <strong id="macroMomentum" class="metric-val">—</strong>
     </div>
     <div class="card metric-card">
-      <span class="muted small">Volatilidad</span>
+      <span class="card-label">Volatilidad</span>
       <strong id="macroVolatility" class="metric-val">—</strong>
     </div>
     <div class="card metric-card">
-      <span class="muted small">Estructura</span>
+      <span class="card-label">Estructura</span>
       <strong id="macroStructure" class="metric-val">—</strong>
     </div>
   </div>
 
-  <div class="card">
-    <h2>Lectura por Temporalidad</h2>
-    <div class="mtf" id="mtf" role="group" aria-label="Lectura por temporalidad"></div>
-  </div>
-
-  <div class="card chart-card">
-    <div class="chart-head">
+  <section class="card chart-card" id="chartCard" aria-labelledby="chart-label">
+    <header class="chart-head">
+      <span class="card-label" id="chart-label">Gráfico</span>
       <div id="legend" class="legend muted small">&nbsp;</div>
       <div class="chart-tools">
-        <button id="chartFullscreen" aria-label="Pantalla completa">⛶</button>
-        <button id="zoomOut" aria-label="Alejar">−</button>
-        <button id="zoomIn" aria-label="Acercar">+</button>
-        <button id="zoomReset" aria-label="Centrar">⟲</button>
+        <button id="chartFullscreen" aria-label="Pantalla completa" title="Pantalla completa">⛶</button>
+        <button id="zoomOut" aria-label="Alejar" title="Alejar">−</button>
+        <button id="zoomIn" aria-label="Acercar" title="Acercar">+</button>
+        <button id="zoomReset" aria-label="Centrar" title="Centrar">⟲</button>
+        <button id="drawToggle" class="draw-toggle" aria-label="Herramientas de dibujo" aria-haspopup="menu" aria-expanded="false" title="Dibujar (solo en pantalla completa)" hidden>✏️</button>
       </div>
+    </header>
+    <div class="drawing-menu" id="drawingMenu" role="menu" aria-label="Herramientas de dibujo" hidden>
+      <button class="tool-btn active" data-tool="cursor" role="menuitemradio" aria-checked="true">
+        <span class="tool-icon">↖</span><span>Seleccionar / Pan</span>
+      </button>
+      <div class="drawing-sep" role="separator"></div>
+      <button class="tool-btn" data-tool="line" role="menuitemradio" aria-checked="false">
+        <span class="tool-icon">╱</span><span>Línea de tendencia</span>
+      </button>
+      <button class="tool-btn" data-tool="h" role="menuitemradio" aria-checked="false">
+        <span class="tool-icon">─</span><span>Línea horizontal</span>
+      </button>
+      <button class="tool-btn" data-tool="v" role="menuitemradio" aria-checked="false">
+        <span class="tool-icon">│</span><span>Línea vertical</span>
+      </button>
+      <button class="tool-btn" data-tool="rect" role="menuitemradio" aria-checked="false">
+        <span class="tool-icon">▭</span><span>Rectángulo</span>
+      </button>
+      <button class="tool-btn" data-tool="fib" role="menuitemradio" aria-checked="false">
+        <span class="tool-icon">π</span><span>Fibonacci</span>
+      </button>
+      <div class="drawing-sep" role="separator"></div>
+      <button class="tool-btn" id="drawUndo" role="menuitem">
+        <span class="tool-icon">↶</span><span>Deshacer último</span>
+      </button>
+      <button class="tool-btn danger" id="drawClear" role="menuitem">
+        <span class="tool-icon">🗑</span><span>Borrar todo</span>
+      </button>
     </div>
     <canvas id="chart" role="img" aria-label="Gráfico de velas japonesas con EMA 20, 50 y 200, y zonas de Order Blocks, Fair Value Gaps y OTE"></canvas>
-    <div class="muted small legend-ema">
+    <div class="legend-ema muted small">
       <span class="k e1"></span> EMA 20
       <span class="k e2"></span> EMA 50
       <span class="k e3"></span> EMA 200
     </div>
-  </div>
+  </section>
 
-  <div class="card conclusion-card">
-    <h2>Conclusión del Análisis</h2>
+  <section class="card mtf-card" aria-labelledby="mtf-label">
+    <span class="card-label" id="mtf-label">Lectura por temporalidad</span>
+    <div class="mtf" id="mtf" role="group" aria-label="Lectura por temporalidad"></div>
+  </section>
+
+  <section class="card conclusion-card" aria-labelledby="conclusion-label">
+    <span class="card-label" id="conclusion-label">Conclusión del análisis</span>
     <p id="conclusionText" class="conclusion-text" aria-live="polite">Esperando datos suficientes para generar un veredicto...</p>
-  </div>
+  </section>
+
+  <section class="card alert-card" id="alertCard" hidden aria-labelledby="alert-label">
+    <span class="card-label warn" id="alert-label">Alertas de agotamiento</span>
+    <ul id="alertList" class="alert-list" role="alert" aria-live="assertive"></ul>
+  </section>
 
 </main>
 
 <footer class="foot" role="contentinfo">
-  Market Consensus PRO · Análisis técnico institucional.
+  Market Consensus PRO · Análisis técnico institucional
   <p>Fines educativos. No constituye asesoramiento financiero.</p>
 </footer>
 
