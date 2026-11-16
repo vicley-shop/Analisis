@@ -298,3 +298,21 @@ main { padding: 8px 14px 28px; }
   .mtf button { padding: 10px 4px; }
   .mtf .lab { font-size: 11px; }
 }
+
+.chart-card:fullscreen,
+.chart-card:-webkit-full-screen {
+  width: 100vw;
+  height: 100vh;
+  margin: 0;
+  padding: 10px;
+  border-radius: 0;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+}
+
+.chart-card:fullscreen #chart,
+.chart-card:-webkit-full-screen #chart {
+  flex: 1;
+  height: auto;
+}
