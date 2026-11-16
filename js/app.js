@@ -266,10 +266,16 @@
       lastVerdict = res.verdictState;
     }
 
-    if (res.overallDirection !== 0) {
-      state.smcResult = SMC.evaluate(state.bars[state.tf], res.overallDirection);
+    if (state.bars[state.tf] && state.bars[state.tf].length > 50) {
+      const smcEval = SMC.evaluate(state.bars[state.tf], res.overallDirection);
+      
+      if (res.consensusScore < 50) {
+        smcEval.score = 0;
+        smcEval.reasons.unshift('⚠️ Consenso general menor al 50%. El mercado está indeciso, no se buscan entradas.');
+      }
+      state.smcResult = smcEval;
     } else {
-      state.smcResult = { score: 0, label: 'Sin sesgo', reasons: ['Sesgo neutral, no se evalúa SMC.'], direction: 0, zones: {} };
+      state.smcResult = { score: 0, label: 'Sin datos', reasons: ['Esperando suficientes velas históricas...'], direction: 0, zones: {} };
     }
 
     renderAll();
