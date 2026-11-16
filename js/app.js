@@ -18,6 +18,7 @@
 
   let chart = null;
   let renderTimer = null;
+  let lastVerdict = 'wait';
 
   const $ = function (id) { return document.getElementById(id); };
 
@@ -218,6 +219,24 @@
   function runAnalysis() {
     const res = A.analyze(state.bars);
     state.analysis = res;
+    
+    if (res.verdictState !== lastVerdict && (res.verdictState === 'buy' || res.verdictState === 'sell')) {
+      if (window.firebase && firebase.firestore) {
+        const db = firebase.firestore();
+        db.collection('notificaciones_pendientes').add({
+          title: 'Market Consensus PRO',
+          body: 'Veredicto: ' + res.verdictLabel + ' en ' + state.symbol + '. ' + res.verdictReason,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+          enviado: false
+        }).catch(function(err) {
+          console.error('Error al encolar notificación:', err);
+        });
+      }
+      lastVerdict = res.verdictState;
+    } else if (res.verdictState === 'wait') {
+      lastVerdict = 'wait';
+    }
+
     renderAll();
   }
 
@@ -371,6 +390,10 @@
   }
 
   function init() {
+    if (AT.notifications) {
+      AT.notifications.init();
+    }
+
     buildSymbolBar();
     initChart();
     startFeed();
