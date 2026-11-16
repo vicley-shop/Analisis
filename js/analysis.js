@@ -44,6 +44,33 @@
     };
   }
 
+  function findNearestLevels(bars, currentPrice) {
+    const highs = [];
+    const lows = [];
+    const lookback = 3;
+    
+    if (!bars || bars.length < 20) return { support: null, resistance: null };
+
+    for (let i = lookback; i < bars.length - lookback; i++) {
+      const b = bars[i];
+      let isHigh = true;
+      let isLow = true;
+
+      for (let j = 1; j <= lookback; j++) {
+        if (bars[i - j].h >= b.h || bars[i + j].h >= b.h) isHigh = false;
+        if (bars[i - j].l <= b.l || bars[i + j].l <= b.l) isLow = false;
+      }
+
+      if (isHigh && b.h > currentPrice) highs.push(b.h);
+      if (isLow && b.l < currentPrice) lows.push(b.l);
+    }
+
+    const support = lows.length > 0 ? Math.max(...lows) : null;
+    const resistance = highs.length > 0 ? Math.min(...highs) : null;
+
+    return { support, resistance };
+  }
+
   function detectExhaustion(bars, direction, config) {
     const alerts = [];
     if (!bars || bars.length < 40) return alerts;
@@ -152,6 +179,9 @@
         macroMomentum: '—',
         macroVolatility: '—',
         alerts: [],
+        verdictState: 'wait',
+        verdictLabel: 'ESPERAR',
+        verdictReason: 'Datos insuficientes para operar.',
         conclusion: 'Datos insuficientes. Se necesitan al menos dos temporalidades con historial suficiente.'
       };
     }
@@ -206,6 +236,7 @@
     let macroMomentum = '—';
     let macroVolatility = '—';
     let alerts = [];
+    let atrVal = 0;
 
     if (highBars && highBars.length > 30) {
       const hc = highBars.map(function (b) { return b.c; });
@@ -227,6 +258,7 @@
       const avgVal = avgAtr[avgAtr.length - 1];
       
       if (num(lastAtr) && num(avgVal) && avgVal > 0) {
+        atrVal = lastAtr;
         const ratio = lastAtr / avgVal;
         if (ratio >= 1.3) macroVolatility = 'Alta';
         else if (ratio <= 0.75) macroVolatility = 'Baja';
@@ -239,6 +271,48 @@
         alerts.push({ type: 'danger', text: 'Consenso casi unánime bajista. Alta probabilidad de sobre-extensión y rebote técnico inminente.' });
       } else if (consensusScore >= 90 && overallDirection === 1) {
         alerts.push({ type: 'danger', text: 'Consenso casi unánime alcista. Alta probabilidad de sobre-extensión y retroceso técnico inminente.' });
+      }
+    }
+
+    let verdictState = 'wait';
+    let verdictLabel = 'ESPERAR';
+    let verdictReason = 'Analizando condiciones...';
+
+    const hasDanger = alerts.some(function(a) { return a.type === 'danger'; });
+    const currentPrice = valid[0].data.price;
+    const levels = findNearestLevels(highBars, currentPrice);
+
+    if (hasDanger) {
+      verdictReason = 'Hay alertas críticas de agotamiento. El movimiento está sobreextendido, espera un retroceso.';
+    } else if (consensusScore < thresholds.moderate) {
+      verdictReason = 'Consenso entre temporalidades menor al 50%. El mercado está indeciso o lateral.';
+    } else {
+      if (overallDirection === 1) {
+        if (levels.support && atrVal > 0) {
+          const dist = (currentPrice - levels.support) / atrVal;
+          if (dist <= 1.5) {
+            verdictState = 'buy';
+            verdictLabel = 'PREPARAR COMPRA';
+            verdictReason = 'Tendencia alcista y el precio está cerca de un soporte en ' + levels.support.toFixed(CFG.symbols[Object.keys(CFG.symbols)[0]].digits) + '.';
+          } else {
+            verdictReason = 'Tendencia alcista, pero el precio está lejos del soporte (' + levels.support.toFixed(4) + '). Espera un retroceso.';
+          }
+        } else {
+          verdictReason = 'Tendencia alcista, pero no se detectan soportes cercanos claros. Espera.';
+        }
+      } else if (overallDirection === -1) {
+        if (levels.resistance && atrVal > 0) {
+          const dist = (levels.resistance - currentPrice) / atrVal;
+          if (dist <= 1.5) {
+            verdictState = 'sell';
+            verdictLabel = 'PREPARAR VENTA';
+            verdictReason = 'Tendencia bajista y el precio está cerca de una resistencia en ' + levels.resistance.toFixed(CFG.symbols[Object.keys(CFG.symbols)[0]].digits) + '.';
+          } else {
+            verdictReason = 'Tendencia bajista, pero el precio está lejos de la resistencia (' + levels.resistance.toFixed(4) + '). Espera un rebote.';
+          }
+        } else {
+          verdictReason = 'Tendencia bajista, pero no se detectan resistencias cercanas claras. Espera.';
+        }
       }
     }
 
@@ -259,12 +333,8 @@
       conclusionParts.push('Momentum en ' + highestTf.toUpperCase() + ': ' + macroMomentum + '.');
     }
 
-    if (macroVolatility !== '—') {
-      conclusionParts.push('Volatilidad: ' + macroVolatility + '.');
-    }
-
     if (alerts.length > 0) {
-      conclusionParts.push('⚠️ PRECAUCIÓN: Se han detectado ' + alerts.length + ' señales de agotamiento. Revisa el panel de alertas antes de operar.');
+      conclusionParts.push('⚠️ PRECAUCIÓN: Se han detectado ' + alerts.length + ' señales de agotamiento.');
     }
 
     return {
@@ -277,6 +347,9 @@
       macroMomentum: macroMomentum,
       macroVolatility: macroVolatility,
       alerts: alerts,
+      verdictState: verdictState,
+      verdictLabel: verdictLabel,
+      verdictReason: verdictReason,
       conclusion: conclusionParts.join(' ')
     };
   }

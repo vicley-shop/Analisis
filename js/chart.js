@@ -19,7 +19,8 @@
       py: null,
       drag: null,
       raf: 0,
-      emas: { e20: [], e50: [], e200: [] }
+      emas: { e20: [], e50: [], e200: [] },
+      levels: { highs: [], lows: [] }
     };
 
     function schedule() {
@@ -28,6 +29,31 @@
         st.raf = 0;
         draw();
       });
+    }
+
+    function findLevels() {
+      const highs = [];
+      const lows = [];
+      const lookback = 3;
+      const n = st.bars.length;
+      if (n < lookback * 2) return;
+
+      for (let i = lookback; i < n - lookback; i++) {
+        const b = st.bars[i];
+        let isHigh = true;
+        let isLow = true;
+
+        for (let j = 1; j <= lookback; j++) {
+          if (st.bars[i - j].h >= b.h || st.bars[i + j].h >= b.h) isHigh = false;
+          if (st.bars[i - j].l <= b.l || st.bars[i + j].l <= b.l) isLow = false;
+        }
+
+        if (isHigh) highs.push({ price: b.h, index: i });
+        if (isLow) lows.push({ price: b.l, index: i });
+      }
+
+      st.levels.highs = highs.slice(-4);
+      st.levels.lows = lows.slice(-4);
     }
 
     function setData(bars, o) {
@@ -40,6 +66,7 @@
       st.emas.e50 = I.ema(c, 50);
       st.emas.e200 = I.ema(c, 200);
       
+      findLevels();
       schedule();
     }
 
@@ -151,6 +178,44 @@
       drawEma(st.emas.e200, '#a855f7');
 
       ctx.restore();
+
+      ctx.lineWidth = 1;
+      
+      st.levels.highs.forEach(function (lvl) {
+        if (lvl.index < r.start) return;
+        const yy = y(lvl.price);
+        if (yy < PAD.t - 2 || yy > PAD.t + plotH + 2) return;
+        ctx.strokeStyle = 'rgba(239, 68, 68, 0.5)';
+        ctx.setLineDash([5, 5]);
+        ctx.beginPath();
+        ctx.moveTo(x(lvl.index), yy);
+        ctx.lineTo(PAD.l + plotW, yy);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.8)';
+        ctx.fillRect(PAD.l + plotW + 1, yy - 8, PAD.r - 2, 16);
+        ctx.fillStyle = '#fff';
+        ctx.textAlign = 'left';
+        ctx.fillText(fmt(lvl.price), PAD.l + plotW + 5, yy);
+      });
+
+      st.levels.lows.forEach(function (lvl) {
+        if (lvl.index < r.start) return;
+        const yy = y(lvl.price);
+        if (yy < PAD.t - 2 || yy > PAD.t + plotH + 2) return;
+        ctx.strokeStyle = 'rgba(34, 197, 94, 0.5)';
+        ctx.setLineDash([5, 5]);
+        ctx.beginPath();
+        ctx.moveTo(x(lvl.index), yy);
+        ctx.lineTo(PAD.l + plotW, yy);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = 'rgba(34, 197, 94, 0.8)';
+        ctx.fillRect(PAD.l + plotW + 1, yy - 8, PAD.r - 2, 16);
+        ctx.fillStyle = '#fff';
+        ctx.textAlign = 'left';
+        ctx.fillText(fmt(lvl.price), PAD.l + plotW + 5, yy);
+      });
 
       if (st.px != null && st.px >= PAD.l && st.px <= PAD.l + plotW && st.py >= PAD.t && st.py <= PAD.t + plotH) {
         ctx.strokeStyle = 'rgba(154, 164, 178, 0.5)';

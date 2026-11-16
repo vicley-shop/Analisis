@@ -110,6 +110,23 @@
     score.textContent = 'Fuerza de consenso: ' + a.consensusScore.toFixed(0) + '%';
   }
 
+  function renderVerdict() {
+    const a = state.analysis;
+    const badge = $('verdictBadge');
+    const reason = $('verdictReason');
+
+    if (!a) {
+      badge.textContent = 'ESPERAR';
+      badge.className = 'verdict-badge wait';
+      reason.textContent = 'Esperando datos del mercado...';
+      return;
+    }
+
+    badge.textContent = a.verdictLabel;
+    badge.className = 'verdict-badge ' + a.verdictState;
+    reason.textContent = a.verdictReason;
+  }
+
   function renderAlerts() {
     const a = state.analysis;
     const card = $('alertCard');
@@ -190,6 +207,7 @@
     renderStatus();
     renderPrice();
     renderGauge();
+    renderVerdict();
     renderAlerts();
     renderMetrics();
     renderMtf();
