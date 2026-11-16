@@ -216,7 +216,8 @@
     return {
       setData: setData,
       zoom: zoom,
-      reset: reset
+      reset: reset,
+      resize: schedule
     };
   }
 

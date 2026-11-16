@@ -206,7 +206,7 @@
   function loadAllBars() {
     state.loading = true;
     const tasks = CFG.timeframes.map(function (tf) {
-      return function () { return D.fetchBars(state.symbol, tf, 500); };
+      return function () { return D.fetchBars(state.symbol, tf, 1000); };
     });
 
     return D.pool(tasks, 3).then(function (results) {
@@ -302,9 +302,25 @@
           '  C ' + f(bar.c) + '  ' + sgn(chg, 2) + '%';
       }
     });
+    
     $('zoomIn').addEventListener('click', function () { chart.zoom(0.8); });
     $('zoomOut').addEventListener('click', function () { chart.zoom(1.25); });
     $('zoomReset').addEventListener('click', function () { chart.reset(); });
+
+    const chartCard = document.querySelector('.chart-card');
+    $('chartFullscreen').addEventListener('click', function () {
+      if (!document.fullscreenElement) {
+        chartCard.requestFullscreen().catch(function(err) {
+          console.log('Error al intentar pantalla completa:', err.message);
+        });
+      } else {
+        document.exitFullscreen();
+      }
+    });
+
+    document.addEventListener('fullscreenchange', function () {
+      if (chart) chart.resize(); 
+    });
 
     $('mtf').addEventListener('click', function (e) {
       const b = e.target.closest('button[data-tf]');
