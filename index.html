@@ -4,44 +4,46 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="dark">
-  <meta name="theme-color" content="#05070b">
+  <meta name="theme-color" content="#0b0e14">
   <meta name="description" content="Market Consensus PRO — Análisis técnico multi-temporal, confluencia SMC y gestión de riesgo institucional.">
   <meta name="format-detection" content="telephone=no">
   <meta name="referrer" content="strict-origin-when-cross-origin">
   <title>Market Consensus PRO</title>
   <link rel="stylesheet" href="css/style.css">
   <style>
-    .skip-link { position: absolute; top: -100px; left: 10px; z-index: 9999; padding: 12px; background: #4f9cf9; color: #05070b; border-radius: 8px; font-weight: 700; }
+    .skip-link { position: absolute; top: -100px; left: 10px; z-index: 9999; padding: 12px 18px; background: #5b8def; color: #0b0e14; border-radius: 8px; font-weight: 700; font-size: 14px; text-decoration: none; }
     .skip-link:focus { top: 10px; }
-    button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid #4f9cf9; outline-offset: 3px; }
+    button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid #5b8def; outline-offset: 3px; }
     [hidden] { display: none !important; }
     .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
   </style>
 </head>
 <body>
 
-<a class="skip-link" href="#mainContent">Saltar al contenido</a>
+<a class="skip-link" href="#mainContent">Saltar al contenido principal</a>
 
 <noscript>
-  <div style="padding: 24px; text-align: center; color: #e6edf3; background: #05070b; min-height: 100vh; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 12px;">
-    <h1 style="margin: 0; font-size: 20px;">Market Consensus PRO</h1>
-    <p style="margin: 0; max-width: 480px;">Este panel requiere JavaScript habilitado para cargar datos de mercado, calcular el consenso multi-temporal y renderizar el gráfico.</p>
+  <div style="padding: 48px 24px; text-align: center; color: #e6edf3; background: #0b0e14; min-height: 100vh; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 16px;">
+    <h1 style="margin: 0; font-size: 22px; font-weight: 700;">Market Consensus PRO</h1>
+    <p style="margin: 0; max-width: 480px; font-size: 14px; color: #8b98ab;">Este panel requiere JavaScript habilitado para cargar datos de mercado, calcular el consenso multi-temporal y renderizar el gráfico.</p>
   </div>
 </noscript>
 
 <header class="top" role="banner">
   <div class="top-inner">
-    <h1 class="brand">
+    <div class="brand" aria-label="Market Consensus PRO">
       <span class="brand-mark" aria-hidden="true">M</span>
       <span class="brand-text">
         <strong>Market Consensus</strong>
         <span class="brand-pro">PRO</span>
       </span>
-    </h1>
-    <div class="symbols" id="symbolBar" role="group" aria-label="Seleccionar mercado"></div>
-    <div class="status">
+    </div>
+
+    <nav class="symbols" id="symbolBar" role="group" aria-label="Seleccionar mercado"></nav>
+
+    <div class="status" role="status" aria-live="polite">
       <span class="dot" id="statusDot"></span>
-      <span id="statusText" role="status" aria-live="polite">Conectando…</span>
+      <span id="statusText">Conectando…</span>
     </div>
   </div>
 </header>
@@ -53,7 +55,7 @@
       <span class="card-label" id="price-label">Precio</span>
       <span id="sessionBadge" class="session-badge neutral">—</span>
     </header>
-    <div id="priceBig" class="price-big">—</div>
+    <div id="priceBig" class="price-big" aria-live="polite">—</div>
     <div class="price-meta">
       <span id="priceChg" class="price-chg"></span>
       <span id="priceSub" class="price-sub"></span>
@@ -64,7 +66,7 @@
     <header class="card-head">
       <span class="card-label" id="verdict-label">Veredicto de operación</span>
     </header>
-    <div role="status" aria-live="polite" class="verdict-content">
+    <div class="verdict-content" role="status" aria-live="polite">
       <div id="verdictBadge" class="verdict-badge wait">ESPERAR</div>
       <p id="verdictReason" class="verdict-reason">Analizando condiciones de mercado...</p>
     </div>
@@ -124,7 +126,7 @@
   <section class="card chart-card" id="chartCard" aria-labelledby="chart-label">
     <header class="chart-head">
       <span class="card-label" id="chart-label">Gráfico</span>
-      <div id="legend" class="legend muted small">&nbsp;</div>
+      <div id="legend" class="legend muted small" aria-live="polite">&nbsp;</div>
       <div class="chart-tools">
         <button id="chartFullscreen" aria-label="Pantalla completa" title="Pantalla completa">⛶</button>
         <button id="zoomOut" aria-label="Alejar" title="Alejar">−</button>
@@ -187,7 +189,7 @@
 </main>
 
 <footer class="foot" role="contentinfo">
-  Market Consensus PRO · Análisis técnico institucional
+  <p>Market Consensus PRO · Análisis técnico institucional</p>
   <p>Fines educativos. No constituye asesoramiento financiero.</p>
 </footer>
 
@@ -195,13 +197,11 @@
 <script defer src="js/indicators.js"></script>
 <script defer src="js/data.js"></script>
 <script defer src="js/analysis.js"></script>
-
 <script defer src="js/smc/structure.js"></script>
 <script defer src="js/smc/liquidity.js"></script>
 <script defer src="js/smc/zones.js"></script>
 <script defer src="js/smc/ote.js"></script>
 <script defer src="js/smc-engine.js"></script>
-
 <script defer src="js/chart.js"></script>
 <script defer src="js/app.js"></script>
 
