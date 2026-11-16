@@ -44,8 +44,16 @@
     return Number.isFinite(t) ? t : null;
   }
 
-  function getJSON(path, timeoutMs) {
+  function retryable(e) {
+    if (!e) return false;
+    if (e.network || e.timeout) return true;
+    return e.status >= 500 && e.status < 600;
+  }
+
+  function getJSON(path, timeoutMs, attempt) {
     const timeout = timeoutMs || feedCfg().fetchTimeout || 8000;
+    const maxAttempts = 3;
+    attempt = attempt || 1;
     const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
     let aborted = false;
     const timer = ctl ? setTimeout(function () { aborted = true; ctl.abort(); }, timeout) : null;
@@ -72,6 +80,13 @@
       e.status = 0;
       e.network = true;
       throw e;
+    }).catch(function (e) {
+      if (attempt < maxAttempts && retryable(e)) {
+        const delay = Math.min(2000, Math.pow(2, attempt - 1) * 300);
+        return new Promise(function (resolve) { setTimeout(resolve, delay); })
+          .then(function () { return getJSON(path, timeoutMs, attempt + 1); });
+      }
+      throw e;
     });
   }
 
@@ -88,6 +103,7 @@
     const c = toNum(raw.close);
     if (t == null || o == null || h == null || l == null || c == null) return null;
     if (h < l) return null;
+    if (o <= 0 || h <= 0 || l <= 0 || c <= 0) return null;
     return {
       t: t,
       o: o,
@@ -132,7 +148,7 @@
     const ask = toNum(raw.ask);
     const midRaw = toNum(raw.mid);
     const mid = midRaw != null ? midRaw : (bid != null && ask != null ? (bid + ask) / 2 : null);
-    if (mid == null) return null;
+    if (mid == null || mid <= 0) return null;
     const ts = parseTs(raw.timestamp);
     const spreadRaw = toNum(raw.spread);
     return {

@@ -23,7 +23,9 @@
     signalLog: [],
     lastVerdictState: 'wait',
     currentTool: 'cursor',
-    drawMenuOpen: false
+    drawMenuOpen: false,
+    tickBuffer: new Map(),
+    rafId: 0
   };
 
   let chart = null;
@@ -54,6 +56,44 @@
     if (dir === 0 || dir == null) return 0;
     const s = Math.max(0, Math.min(100, score || 0));
     return (s / 100) * 90 * dir;
+  }
+
+  function flushTicks() {
+    if (state.rafId) return;
+    state.rafId = requestAnimationFrame(function () {
+      state.rafId = 0;
+      const buffer = state.tickBuffer;
+      state.tickBuffer = new Map();
+      buffer.forEach(function (tick) {
+        processTick(tick);
+      });
+    });
+  }
+
+  function processTick(tick) {
+    if (!tick || !tick.symbol) return;
+    state.ticks[tick.symbol] = tick;
+
+    if (tick.symbol !== state.symbol) {
+      updateSymbolBarPrices();
+      return;
+    }
+
+    if (tick.stale) return;
+
+    let newBar = false;
+    const tfMs = D.TF;
+    Object.keys(state.bars).forEach(function (tf) {
+      const ms = tfMs[tf];
+      if (ms && state.bars[tf] && state.bars[tf].length) {
+        const result = D.applyTick(state.bars[tf], ms, tick.mid, tick.ts);
+        if (result === 'new') newBar = true;
+      }
+    });
+
+    updateSymbolBarPrices();
+    renderPrice();
+    scheduleAnalysis(newBar);
   }
 
   function renderStatus() {
@@ -499,32 +539,8 @@
 
   function onTick(tick) {
     if (!tick || !tick.symbol) return;
-    state.ticks[tick.symbol] = tick;
-
-    if (tick.symbol !== state.symbol) {
-      updateSymbolBarPrices();
-      return;
-    }
-
-    if (tick.stale) return;
-
-    let newBar = false;
-    const tfMs = D.TF;
-    Object.keys(state.bars).forEach(function (tf) {
-      const ms = tfMs[tf];
-      if (ms && state.bars[tf] && state.bars[tf].length) {
-        const result = D.applyTick(state.bars[tf], ms, tick.mid, tick.ts);
-        if (result === 'new') newBar = true;
-      }
-    });
-
-    if (state.renderTimer) return;
-    state.renderTimer = setTimeout(function () {
-      state.renderTimer = null;
-      updateSymbolBarPrices();
-      renderPrice();
-      scheduleAnalysis(newBar);
-    }, 100);
+    state.tickBuffer.set(tick.symbol, tick);
+    flushTicks();
   }
 
   function initChart() {
@@ -769,6 +785,10 @@
   }
 
   function cleanup() {
+    if (state.rafId) {
+      cancelAnimationFrame(state.rafId);
+      state.rafId = 0;
+    }
     if (chart) {
       if (typeof chart.destroy === 'function') chart.destroy();
       chart = null;

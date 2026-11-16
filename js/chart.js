@@ -75,10 +75,18 @@
         const raw = window.localStorage.getItem(scopeKey());
         if (!raw) { st.drawings = []; return; }
         const parsed = JSON.parse(raw);
-        st.drawings = Array.isArray(parsed) ? parsed : [];
+        st.drawings = Array.isArray(parsed) ? parsed.filter(isValidDrawing) : [];
       } catch (e) {
         st.drawings = [];
       }
+    }
+
+    function isValidDrawing(d) {
+      if (!d || typeof d !== 'object') return false;
+      if (!d.p1 || typeof d.p1.t !== 'number' || typeof d.p1.price !== 'number') return false;
+      if (d.p2 && (typeof d.p2.t !== 'number' || typeof d.p2.price !== 'number')) return false;
+      if (d.type !== 'line' && d.type !== 'h' && d.type !== 'v' && d.type !== 'rect' && d.type !== 'fib') return false;
+      return true;
     }
 
     function saveDrawings() {
@@ -506,19 +514,46 @@
 
       const upColor = color('up', '#10b981');
       const downColor = color('down', '#f43f5e');
+
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = downColor;
+      ctx.beginPath();
       for (let i = r.start; i < r.end; i++) {
         const b = st.bars[i];
-        const xx = x(i);
-        const candle = b.c >= b.o ? upColor : downColor;
-        ctx.strokeStyle = candle;
-        ctx.fillStyle = candle;
-        ctx.beginPath();
+        if (b.c >= b.o) continue;
+        const xx = Math.round(x(i)) + 0.5;
         ctx.moveTo(xx, y(b.h));
         ctx.lineTo(xx, y(b.l));
-        ctx.stroke();
-        const top = y(Math.max(b.o, b.c));
-        const bot = y(Math.min(b.o, b.c));
-        ctx.fillRect(xx - bodyW / 2, top, bodyW, Math.max(1, bot - top));
+      }
+      ctx.stroke();
+
+      ctx.strokeStyle = upColor;
+      ctx.beginPath();
+      for (let i = r.start; i < r.end; i++) {
+        const b = st.bars[i];
+        if (b.c < b.o) continue;
+        const xx = Math.round(x(i)) + 0.5;
+        ctx.moveTo(xx, y(b.h));
+        ctx.lineTo(xx, y(b.l));
+      }
+      ctx.stroke();
+
+      ctx.fillStyle = downColor;
+      for (let i = r.start; i < r.end; i++) {
+        const b = st.bars[i];
+        if (b.c >= b.o) continue;
+        const top = y(b.o);
+        const bot = y(b.c);
+        ctx.fillRect(Math.round(x(i) - bodyW / 2), top, bodyW, Math.max(1, bot - top));
+      }
+
+      ctx.fillStyle = upColor;
+      for (let i = r.start; i < r.end; i++) {
+        const b = st.bars[i];
+        if (b.c < b.o) continue;
+        const top = y(b.c);
+        const bot = y(b.o);
+        ctx.fillRect(Math.round(x(i) - bodyW / 2), top, bodyW, Math.max(1, bot - top));
       }
 
       function drawEma(arr, strokeColor) {

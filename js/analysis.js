@@ -103,7 +103,10 @@
 
   function getSessionLabel(marketState, liquidityState) {
     if (!marketState.open) return SESSION_LABELS.closed;
-    if (marketState.alwaysOpen) return SESSION_LABELS.alwaysOpen;
+    if (marketState.alwaysOpen) {
+      if (liquidityState.overlap) return SESSION_LABELS.highLiquidity;
+      return SESSION_LABELS.alwaysOpen;
+    }
     if (liquidityState.overlap) return SESSION_LABELS.highLiquidity;
     if (liquidityState.london) return SESSION_LABELS.european;
     if (liquidityState.newYork) return SESSION_LABELS.american;

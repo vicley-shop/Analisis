@@ -1,20 +1,22 @@
 window.AT_CONFIG = {
-  version: '2.1.0',
+  version: '2.2.0',
   base: 'https://biquote.io',
   signalrUrl: 'https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.0/signalr.min.js',
 
   symbols: {
-    XAUUSD: { name: 'Oro / Dólar',      digits: 2, contract: 100,    spread: 0.30,    family: 'metals', enabled: true },
-    XAGUSD: { name: 'Plata / Dólar',    digits: 3, contract: 5000,   spread: 0.03,    family: 'metals', enabled: true },
-    EURUSD: { name: 'Euro / Dólar',     digits: 5, contract: 100000, spread: 0.00010, family: 'forex',  enabled: true },
-    BTCUSD: { name: 'Bitcoin / Dólar',  digits: 2, contract: 1,      spread: 0.60,    family: 'crypto', enabled: true }
+    XAUUSD: { name: 'Oro / Dólar', digits: 2, contract: 100, spread: 0.30, family: 'metals', enabled: true },
+    XAGUSD: { name: 'Plata / Dólar', digits: 3, contract: 5000, spread: 0.03, family: 'metals', enabled: true },
+    EURUSD: { name: 'Euro / Dólar', digits: 5, contract: 100000, spread: 0.00010, family: 'forex', enabled: true },
+    BTCUSD: { name: 'Bitcoin / Dólar', digits: 2, contract: 1, spread: 0.60, family: 'crypto', enabled: true },
+    BNBUSD: { name: 'BNB / Dólar', digits: 2, contract: 1, spread: 0.30, family: 'crypto', enabled: true }
   },
 
   alias: {
     XAUUSD: 'XAUUSD',
     XAGUSD: 'XAGUSD',
     EURUSD: 'EURUSD',
-    BTCUSD: 'BTCUSD'
+    BTCUSD: 'BTCUSD',
+    BNBUSD: 'BNBUSD'
   },
 
   timeframes: {
@@ -25,8 +27,8 @@ window.AT_CONFIG = {
   },
 
   sessions: {
-    london:   { startGmt: 8,  endGmt: 16 },
-    newYork:  { startGmt: 13, endGmt: 21 },
+    london: { startGmt: 8, endGmt: 16 },
+    newYork: { startGmt: 13, endGmt: 21 },
     combined: { startGmt: 13, endGmt: 16 },
     dstAdjust: false
   },
@@ -34,12 +36,12 @@ window.AT_CONFIG = {
   tradingHours: {
     forex: {
       alwaysOpen: false,
-      open:  { day: 0, hour: 22 },
+      open: { day: 0, hour: 22 },
       close: { day: 5, hour: 22 }
     },
     metals: {
       alwaysOpen: false,
-      open:  { day: 0, hour: 23 },
+      open: { day: 0, hour: 23 },
       close: { day: 5, hour: 22 }
     },
     crypto: {
@@ -47,7 +49,7 @@ window.AT_CONFIG = {
     },
     index: {
       alwaysOpen: false,
-      open:  { day: 0, hour: 22 },
+      open: { day: 0, hour: 22 },
       close: { day: 5, hour: 21 }
     }
   },
@@ -87,7 +89,7 @@ window.AT_CONFIG = {
     oteMin: 0.618,
     oteMax: 0.79,
     oteMid: 0.705,
-    oteSwingRecency: 30,
+    oteSwingRecency: 40,
     minSwingAtrMult: 3,
     maxSwingAge: 200,
     weights: { mss: 30, sweep: 25, fvg: 15, ob: 15, ote: 15 },
