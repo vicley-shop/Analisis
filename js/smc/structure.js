@@ -6,7 +6,7 @@ window.AT.smc.structure = (function () {
 
   const DEFAULT_LOOKBACK = 5;
   const DEFAULT_MSS_WINDOW = 15;
-  const PIVOT_TOLERANCE_ATR_MULT = 0.01;
+  const PIVOT_TOLERANCE_ATR_MULT = 0.10;
 
   function cfg() {
     return (window.AT_CONFIG && window.AT_CONFIG.smc) || {};
