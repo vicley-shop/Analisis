@@ -38,9 +38,7 @@
         <span class="brand-pro">PRO</span>
       </span>
     </div>
-
     <nav class="symbols" id="symbolBar" role="group" aria-label="Seleccionar mercado"></nav>
-
     <div class="status" role="status" aria-live="polite">
       <span class="dot" id="statusDot"></span>
       <span id="statusText">Conectando…</span>
@@ -55,7 +53,7 @@
       <span class="card-label" id="price-label">Precio</span>
       <span id="sessionBadge" class="session-badge neutral">—</span>
     </header>
-    <div id="priceBig" class="price-big" aria-live="polite">—</div>
+    <div id="priceBig" class="price-big">—</div>
     <div class="price-meta">
       <span id="priceChg" class="price-chg"></span>
       <span id="priceSub" class="price-sub"></span>
@@ -171,12 +169,17 @@
     </div>
   </section>
 
-  <section class="card mtf-card" aria-labelledby="mtf-label">
-    <span class="card-label" id="mtf-label">Lectura por temporalidad</span>
+  <section class="card mtf-card" id="mtfCard" aria-labelledby="mtf-label">
+    <header class="mtf-head">
+      <span class="card-label" id="mtf-label">Lectura por temporalidad</span>
+      <button id="mtfToggle" class="mtf-toggle" aria-label="Mostrar más temporalidades" aria-expanded="false" aria-controls="mtf">
+        <span class="mtf-toggle-icon" aria-hidden="true">›</span>
+      </button>
+    </header>
     <div class="mtf" id="mtf" role="group" aria-label="Lectura por temporalidad"></div>
   </section>
 
-  <section class="card conclusion-card" aria-labelledby="conclusion-label">
+  <section class="card conclusion-card" id="conclusionCard" aria-labelledby="conclusion-label">
     <span class="card-label" id="conclusion-label">Conclusión del análisis</span>
     <p id="conclusionText" class="conclusion-text" aria-live="polite">Esperando datos suficientes para generar un veredicto...</p>
   </section>
