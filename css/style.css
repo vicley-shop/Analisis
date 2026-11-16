@@ -221,6 +221,46 @@ main { padding: 8px 14px 28px; }
 .verdict-badge.sell { background: rgba(239, 68, 68, 0.15); color: var(--sell); border: 1px solid var(--down); }
 .verdict-reason { font-size: 13px; color: #d1d5db; margin: 0; line-height: 1.5; }
 
+.smc-card {
+  border-color: rgba(59, 130, 246, 0.4);
+  background: linear-gradient(155deg, rgba(59, 130, 246, 0.05), rgba(18, 24, 32, 0.98));
+}
+.smc-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.smc-score {
+  font-family: var(--font-mono);
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--ema2);
+}
+.smc-bar-bg {
+  width: 100%;
+  height: 8px;
+  background: var(--panel2);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+.smc-bar-fill {
+  height: 100%;
+  background: var(--ema2);
+  border-radius: 4px;
+  transition: width 0.4s ease, background-color 0.4s ease;
+}
+.smc-reasons {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  color: #d1d5db;
+  line-height: 1.6;
+}
+.smc-reasons li { margin-bottom: 4px; }
+.smc-reasons li::marker { color: var(--ema2); }
+
 .alert-card {
   border-color: rgba(245, 158, 11, 0.4);
   background: linear-gradient(155deg, rgba(245, 158, 11, 0.05), rgba(18, 24, 32, 0.98));
@@ -301,44 +341,6 @@ main { padding: 8px 14px 28px; }
 
 .foot { padding: 15px 16px calc(28px + env(safe-area-inset-bottom)); color: var(--muted2); font-size: 11.5px; text-align: center; }
 .foot p { margin: 6px auto 0; max-width: 720px; }
-
-.notif-container {
-  display: flex;
-  justify-content: center;
-  margin: 20px 0 10px;
-}
-
-.btn-notif {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 20px;
-  border: 1px solid var(--border-strong);
-  border-radius: 99px;
-  background: var(--panel2);
-  color: var(--text);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.btn-notif:hover {
-  border-color: var(--accent);
-  background: var(--panel);
-  box-shadow: 0 0 10px rgba(34, 197, 94, 0.1);
-}
-
-.btn-notif.active {
-  border-color: var(--accent);
-  background: rgba(34, 197, 94, 0.1);
-  color: var(--accent);
-}
-
-.btn-notif:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
 
 @media (max-width: 390px) {
   .mtf { grid-template-columns: repeat(4, minmax(0, 1fr)); }
