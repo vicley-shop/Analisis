@@ -21,11 +21,6 @@ window.AT_CONFIG = {
   timeframes: ['1m', '5m', '15m', '30m', '1h', '4h', '1d'],
   defaultTf: '1h',
   consensus: {
-    weights: {
-      trend: 1.5,
-      momentum: 1.0,
-      volatility: 0.5
-    },
     thresholds: {
       strong: 75,
       moderate: 50

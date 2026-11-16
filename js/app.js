@@ -4,6 +4,7 @@
   const AT = window.AT;
   const D = AT.data;
   const A = AT.analysis;
+  const SMC = AT.smcEngine;
   const CFG = window.AT_CONFIG;
 
   const state = {
@@ -12,6 +13,7 @@
     bars: {},
     ticks: {},
     analysis: null,
+    smcResult: null,
     feedMode: 'off',
     loading: false
   };
@@ -128,6 +130,39 @@
     reason.textContent = a.verdictReason;
   }
 
+  function renderSMC() {
+    const smc = state.smcResult;
+    const scoreEl = $('smcScore');
+    const barEl = $('smcBarFill');
+    const reasonsEl = $('smcReasons');
+
+    if (!smc) {
+      scoreEl.textContent = '0%';
+      barEl.style.width = '0%';
+      barEl.style.backgroundColor = 'var(--ema2)';
+      reasonsEl.innerHTML = '<li class="muted">Esperando datos...</li>';
+      return;
+    }
+
+    scoreEl.textContent = smc.score + '%';
+    barEl.style.width = smc.score + '%';
+
+    if (smc.score >= 80) {
+      barEl.style.backgroundColor = 'var(--up)';
+      scoreEl.style.color = 'var(--up)';
+    } else if (smc.score >= 50) {
+      barEl.style.backgroundColor = 'var(--warn)';
+      scoreEl.style.color = 'var(--warn)';
+    } else {
+      barEl.style.backgroundColor = 'var(--down)';
+      scoreEl.style.color = 'var(--down)';
+    }
+
+    reasonsEl.innerHTML = smc.reasons.map(function (r) {
+      return '<li>' + esc(r) + '</li>';
+    }).join('');
+  }
+
   function renderAlerts() {
     const a = state.analysis;
     const card = $('alertCard');
@@ -202,6 +237,12 @@
     const bars = state.bars[state.tf] || [];
     const inst = CFG.symbols[state.symbol];
     chart.setData(bars, { tf: state.tf, digits: inst.digits });
+    
+    if (state.smcResult && state.smcResult.zones) {
+      chart.setZones(state.smcResult.zones);
+    } else {
+      chart.setZones(null);
+    }
   }
 
   function renderAll() {
@@ -209,6 +250,7 @@
     renderPrice();
     renderGauge();
     renderVerdict();
+    renderSMC();
     renderAlerts();
     renderMetrics();
     renderMtf();
@@ -219,22 +261,15 @@
   function runAnalysis() {
     const res = A.analyze(state.bars);
     state.analysis = res;
-    
-    if (res.verdictState !== lastVerdict && (res.verdictState === 'buy' || res.verdictState === 'sell')) {
-      if (window.firebase && firebase.firestore) {
-        const db = firebase.firestore();
-        db.collection('notificaciones_pendientes').add({
-          title: 'Market Consensus PRO',
-          body: 'Veredicto: ' + res.verdictLabel + ' en ' + state.symbol + '. ' + res.verdictReason,
-          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-          enviado: false
-        }).catch(function(err) {
-          console.error('Error al encolar notificación:', err);
-        });
-      }
+
+    if (res.verdictState !== lastVerdict) {
       lastVerdict = res.verdictState;
-    } else if (res.verdictState === 'wait') {
-      lastVerdict = 'wait';
+    }
+
+    if (res.overallDirection !== 0) {
+      state.smcResult = SMC.evaluate(state.bars[state.tf], res.overallDirection);
+    } else {
+      state.smcResult = { score: 0, label: 'Sin sesgo', reasons: ['Sesgo neutral, no se evalúa SMC.'], direction: 0, zones: {} };
     }
 
     renderAll();
@@ -263,6 +298,7 @@
     state.symbol = sym;
     state.bars = {};
     state.analysis = null;
+    state.smcResult = null;
     
     Array.from($('symbolBar').children).forEach(function (b) {
       b.classList.toggle('active', b.dataset.sym === sym);
@@ -365,6 +401,7 @@
       state.tf = b.dataset.tf;
       renderMtf();
       renderChart();
+      runAnalysis();
     });
   }
 
@@ -390,10 +427,6 @@
   }
 
   function init() {
-    if (AT.notifications) {
-      AT.notifications.init();
-    }
-
     buildSymbolBar();
     initChart();
     startFeed();

@@ -65,10 +65,10 @@
       if (isLow && b.l < currentPrice) lows.push(b.l);
     }
 
-    const support = lows.length > 0 ? Math.max(...lows) : null;
-    const resistance = highs.length > 0 ? Math.min(...highs) : null;
+    const support = lows.length > 0 ? Math.max.apply(null, lows) : null;
+    const resistance = highs.length > 0 ? Math.min.apply(null, highs) : null;
 
-    return { support, resistance };
+    return { support: support, resistance: resistance };
   }
 
   function detectExhaustion(bars, direction, config) {
@@ -88,9 +88,9 @@
     const lastRsi = rsiArr[i];
 
     if (num(lastRsi)) {
-      if (lastRsi > config.rsiOverbought) {
+      if (lastRsi > (config.rsiOverbought || 70)) {
         alerts.push({ type: 'warn', text: 'RSI en zona de sobrecompra (' + lastRsi.toFixed(1) + '). Posible agotamiento alcista.' });
-      } else if (lastRsi < config.rsiOversold) {
+      } else if (lastRsi < (config.rsiOversold || 30)) {
         alerts.push({ type: 'warn', text: 'RSI en zona de sobreventa (' + lastRsi.toFixed(1) + '). Posible agotamiento bajista.' });
       }
     }
