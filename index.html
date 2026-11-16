@@ -57,6 +57,11 @@
     <div id="gaugeScore" class="muted small center"></div>
   </div>
 
+  <div class="card alert-card" id="alertCard" hidden>
+    <h2>⚠️ Alertas de Agotamiento</h2>
+    <ul id="alertList" class="alert-list"></ul>
+  </div>
+
   <div class="metrics-grid">
     <div class="card metric-card">
       <span class="muted small">Tendencia Macro</span>
@@ -90,7 +95,7 @@
         <button id="zoomReset" aria-label="Centrar">⟲</button>
       </div>
     </div>
-    <canvas id="chart" aria-label="Gráfico de velas japonesas con estructura de mercado"></canvas>
+    <canvas id="chart" aria-label="Gráfico de velas japonesas"></canvas>
     <div class="muted small legend-ema">
       <span class="k e1"></span> EMA 20
       <span class="k e2"></span> EMA 50
