@@ -27,8 +27,16 @@ window.AT_CONFIG = {
       volatility: 0.5
     },
     thresholds: {
-      strong: 70,
+      strong: 75,
       moderate: 50
     }
+  },
+  exhaustion: {
+    rsiOverbought: 70,
+    rsiOversold: 30,
+    adxDropPct: 20,
+    lookbackCandles: 5,
+    volumeDropPct: 30,
+    volumeLookback: 20
   }
 };

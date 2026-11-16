@@ -110,6 +110,23 @@
     score.textContent = 'Fuerza de consenso: ' + a.consensusScore.toFixed(0) + '%';
   }
 
+  function renderAlerts() {
+    const a = state.analysis;
+    const card = $('alertCard');
+    const list = $('alertList');
+
+    if (!a || !a.alerts || a.alerts.length === 0) {
+      card.hidden = true;
+      list.innerHTML = '';
+      return;
+    }
+
+    card.hidden = false;
+    list.innerHTML = a.alerts.map(function (alert) {
+      return '<li><strong>[' + alert.type.toUpperCase() + ']</strong> ' + esc(alert.text) + '</li>';
+    }).join('');
+  }
+
   function renderMetrics() {
     const a = state.analysis;
     if (!a) return;
@@ -117,9 +134,15 @@
     $('macroMomentum').textContent = a.macroMomentum || '—';
     $('macroVolatility').textContent = a.macroVolatility || '—';
     
-    const dirTxt = a.overallDirection === 1 ? 'Alcista' : 'Bajista';
-    $('macroStructure').textContent = a.consensusLabel === 'neutral' ? 'Lateral' : dirTxt;
-    $('macroStructure').className = 'metric-val ' + (a.overallDirection === 1 ? 'up' : a.overallDirection === -1 ? 'down' : '');
+    let structTxt = 'Lateral';
+    let structCls = 'metric-val';
+    if (a.consensusLabel !== 'neutral') {
+      structTxt = a.overallDirection === 1 ? 'Alcista' : 'Bajista';
+      structCls += ' ' + (a.overallDirection === 1 ? 'up' : 'down');
+    }
+    const el = $('macroStructure');
+    el.textContent = structTxt;
+    el.className = structCls;
   }
 
   function renderMtf() {
@@ -167,6 +190,7 @@
     renderStatus();
     renderPrice();
     renderGauge();
+    renderAlerts();
     renderMetrics();
     renderMtf();
     renderConclusion();
@@ -201,7 +225,6 @@
     if (state.symbol === sym) return;
     state.symbol = sym;
     state.bars = {};
-    state.ticks = {};
     state.analysis = null;
     
     Array.from($('symbolBar').children).forEach(function (b) {
@@ -254,7 +277,7 @@
       const tfMs = D.TF;
       Object.keys(state.bars).forEach(function (tf) {
         const ms = tfMs[tf];
-        D.applyTick(state.bars[tf], ms, tick.mid, tick.ts);
+        if (ms) D.applyTick(state.bars[tf], ms, tick.mid, tick.ts);
       });
 
       if (renderTimer) return;
@@ -269,7 +292,16 @@
   }
 
   function initChart() {
-    chart = AT.chart.create($('chart'), {});
+    chart = AT.chart.create($('chart'), {
+      onHover: function (bar) {
+        const el = $('legend');
+        if (!bar) { el.innerHTML = '&nbsp;'; return; }
+        const f = function (p) { return fmt(state.symbol, p); };
+        const chg = bar.o ? (bar.c - bar.o) / bar.o * 100 : 0;
+        el.textContent = 'A ' + f(bar.o) + '  Máx ' + f(bar.h) + '  Mín ' + f(bar.l) +
+          '  C ' + f(bar.c) + '  ' + sgn(chg, 2) + '%';
+      }
+    });
     $('zoomIn').addEventListener('click', function () { chart.zoom(0.8); });
     $('zoomOut').addEventListener('click', function () { chart.zoom(1.25); });
     $('zoomReset').addEventListener('click', function () { chart.reset(); });

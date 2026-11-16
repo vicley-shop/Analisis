@@ -19,8 +19,7 @@
       py: null,
       drag: null,
       raf: 0,
-      emas: { e20: [], e50: [], e200: [] },
-      structure: { lines: [], boxes: [], labels: [] }
+      emas: { e20: [], e50: [], e200: [] }
     };
 
     function schedule() {
@@ -29,50 +28,6 @@
         st.raf = 0;
         draw();
       });
-    }
-
-    function findStructure(bars) {
-      const lines = [], boxes = [], labels = [];
-      if (bars.length < 20) return { lines, boxes, labels };
-
-      const lookback = 3;
-      let lastSwingHigh = null, lastSwingLow = null;
-      let trend = 0;
-
-      for (let i = lookback; i < bars.length - lookback; i++) {
-        const b = bars[i];
-        let isHigh = true, isLow = true;
-
-        for (let j = 1; j <= lookback; j++) {
-          if (bars[i - j].h >= b.h || bars[i + j].h >= b.h) isHigh = false;
-          if (bars[i - j].l <= b.l || bars[i + j].l <= b.l) isLow = false;
-        }
-
-        if (isHigh) {
-          if (lastSwingHigh && b.c > lastSwingHigh.price) {
-            const type = trend === -1 ? 'CHoCH' : 'BOS';
-            labels.push({ x: i, y: b.h, text: 'Major ' + type, color: '#22c55e', align: 'bottom' });
-            lines.push({ x1: lastSwingHigh.index, y1: lastSwingHigh.price, x2: i, y2: lastSwingHigh.price, color: '#22c55e', dash: true });
-            if (type === 'CHoCH') trend = 1;
-            const obBar = bars[lastSwingHigh.index - 1] || bars[lastSwingHigh.index];
-            boxes.push({ x: lastSwingHigh.index, top: Math.max(obBar.o, obBar.c), bottom: Math.min(obBar.o, obBar.c), color: 'rgba(239, 68, 68, 0.2)', border: 'rgba(239, 68, 68, 0.5)' });
-          }
-          lastSwingHigh = { index: i, price: b.h };
-        }
-
-        if (isLow) {
-          if (lastSwingLow && b.c < lastSwingLow.price) {
-            const type = trend === 1 ? 'CHoCH' : 'BOS';
-            labels.push({ x: i, y: b.l, text: 'Major ' + type, color: '#ef4444', align: 'top' });
-            lines.push({ x1: lastSwingLow.index, y1: lastSwingLow.price, x2: i, y2: lastSwingLow.price, color: '#ef4444', dash: true });
-            if (type === 'CHoCH') trend = -1;
-            const obBar = bars[lastSwingLow.index - 1] || bars[lastSwingLow.index];
-            boxes.push({ x: lastSwingLow.index, top: Math.max(obBar.o, obBar.c), bottom: Math.min(obBar.o, obBar.c), color: 'rgba(34, 197, 94, 0.2)', border: 'rgba(34, 197, 94, 0.5)' });
-          }
-          lastSwingLow = { index: i, price: b.l };
-        }
-      }
-      return { lines, boxes, labels };
     }
 
     function setData(bars, o) {
@@ -84,7 +39,6 @@
       st.emas.e20 = I.ema(c, 20);
       st.emas.e50 = I.ema(c, 50);
       st.emas.e200 = I.ema(c, 200);
-      st.structure = findStructure(st.bars);
       
       schedule();
     }
@@ -139,7 +93,6 @@
 
       const y = function (p) { return PAD.t + (hi - p) / (hi - lo) * plotH; };
       const x = function (idx) { return PAD.l + (idx - r.start) * step + step / 2; };
-
       const fmt = function (p) { return p.toFixed(st.digits); };
 
       ctx.font = '11px system-ui, sans-serif';
@@ -162,16 +115,6 @@
       ctx.beginPath();
       ctx.rect(PAD.l, PAD.t, plotW, plotH);
       ctx.clip();
-
-      st.structure.boxes.forEach(function (b) {
-        if (b.x < r.start || b.x > r.end) return;
-        const xx = x(b.x);
-        ctx.fillStyle = b.color;
-        ctx.strokeStyle = b.border;
-        ctx.lineWidth = 1;
-        ctx.fillRect(xx - bodyW * 2, y(b.top), plotW, y(b.bottom) - y(b.top));
-        ctx.strokeRect(xx - bodyW * 2, y(b.top), plotW, y(b.bottom) - y(b.top));
-      });
 
       for (let i = r.start; i < r.end; i++) {
         const b = st.bars[i];
@@ -207,28 +150,27 @@
       drawEma(st.emas.e50, '#3b82f6');
       drawEma(st.emas.e200, '#a855f7');
 
-      st.structure.lines.forEach(function (l) {
-        if (l.x1 < r.start || l.x2 > r.end) return;
-        ctx.strokeStyle = l.color;
-        ctx.lineWidth = 1;
-        ctx.setLineDash([4, 4]);
+      ctx.restore();
+
+      if (st.px != null && st.px >= PAD.l && st.px <= PAD.l + plotW && st.py >= PAD.t && st.py <= PAD.t + plotH) {
+        ctx.strokeStyle = 'rgba(154, 164, 178, 0.5)';
+        ctx.setLineDash([3, 3]);
         ctx.beginPath();
-        ctx.moveTo(x(l.x1), y(l.y1));
-        ctx.lineTo(x(l.x2), y(l.y1));
+        ctx.moveTo(st.px, PAD.t);
+        ctx.lineTo(st.px, PAD.t + plotH);
+        ctx.moveTo(PAD.l, st.py);
+        ctx.lineTo(PAD.l + plotW, st.py);
         ctx.stroke();
         ctx.setLineDash([]);
-      });
-
-      st.structure.labels.forEach(function (lab) {
-        if (lab.x < r.start || lab.x > r.end) return;
-        ctx.fillStyle = lab.color;
-        ctx.textAlign = 'center';
-        ctx.font = 'bold 10px system-ui, sans-serif';
-        const yy = lab.align === 'bottom' ? y(lab.y) - 10 : y(lab.y) + 15;
-        ctx.fillText(lab.text, x(lab.x), yy);
-      });
-
-      ctx.restore();
+        
+        const p = hi - (st.py - PAD.t) / plotH * (hi - lo);
+        ctx.fillStyle = '#1a222c';
+        ctx.fillRect(PAD.l + plotW + 1, st.py - 8, PAD.r - 2, 16);
+        ctx.fillStyle = '#e5e7eb';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(fmt(p), PAD.l + plotW + 5, st.py);
+      }
     }
 
     function local(e) {

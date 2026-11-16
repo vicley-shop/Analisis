@@ -6,7 +6,6 @@
 
   const G = typeof globalThis !== 'undefined' ? globalThis : root;
   const TF = { '1m': 60000, '5m': 300000, '15m': 900000, '30m': 1800000, '1h': 3600000, '4h': 14400000, '1d': 86400000 };
-  
   const FETCH_TIMEOUT = 8000;
   const POLL_MS = 2000;
   const POLL_SLOW_MS = 20000;
@@ -266,7 +265,7 @@
             setMode('live');
             startPolling(POLL_SLOW_MS);
             return true;
-          }, function (err) {
+          }, function () {
             try { conn.stop(); } catch (e) {}
             conn = null;
             return false;
@@ -288,7 +287,7 @@
           : Promise.resolve(true);
         return client.then(function () {
           return startSignalR();
-        }).then(function (ok) {
+        }).then(function () {
           return mode;
         });
       },
@@ -298,6 +297,8 @@
         if (conn) { try { conn.stop(); } catch (e) {} conn = null; }
         setMode('off');
       },
+      mode: function () { return mode; },
+      lastTickAt: function () { return lastTickAt; },
       reconnect: function () {
         stopped = true;
         if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }

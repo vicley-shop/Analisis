@@ -44,7 +44,91 @@
     };
   }
 
+  function detectExhaustion(bars, direction, config) {
+    const alerts = [];
+    if (!bars || bars.length < 40) return alerts;
+
+    const c = bars.map(function (b) { return b.c; });
+    const h = bars.map(function (b) { return b.h; });
+    const l = bars.map(function (b) { return b.l; });
+    const v = bars.map(function (b) { return b.v || 0; });
+    
+    const rsiArr = I.rsi(c, 14);
+    const adxData = I.adx(h, l, c, 14);
+    const adxArr = adxData.adx;
+    
+    const i = bars.length - 1;
+    const lastRsi = rsiArr[i];
+
+    if (num(lastRsi)) {
+      if (lastRsi > config.rsiOverbought) {
+        alerts.push({ type: 'warn', text: 'RSI en zona de sobrecompra (' + lastRsi.toFixed(1) + '). Posible agotamiento alcista.' });
+      } else if (lastRsi < config.rsiOversold) {
+        alerts.push({ type: 'warn', text: 'RSI en zona de sobreventa (' + lastRsi.toFixed(1) + '). Posible agotamiento bajista.' });
+      }
+    }
+
+    const lookback = config.lookbackCandles || 5;
+    if (i >= lookback && num(adxArr[i]) && num(adxArr[i - lookback]) && adxArr[i - lookback] > 0) {
+      const dropPct = ((adxArr[i - lookback] - adxArr[i]) / adxArr[i - lookback]) * 100;
+      if (dropPct > (config.adxDropPct || 20)) {
+        alerts.push({ type: 'info', text: 'Fuerza de tendencia (ADX) ha caído un ' + dropPct.toFixed(0) + '% en las últimas ' + lookback + ' velas.' });
+      }
+    }
+
+    if (i > 35) {
+      let currLowIdx = -1, currLowVal = Infinity;
+      for (let j = i; j >= i - 15; j--) {
+        if (l[j] < currLowVal) { currLowVal = l[j]; currLowIdx = j; }
+      }
+      let prevLowIdx = -1, prevLowVal = Infinity;
+      for (let j = i - 20; j >= i - 35; j--) {
+        if (l[j] < prevLowVal) { prevLowVal = l[j]; prevLowIdx = j; }
+      }
+      if (currLowIdx !== -1 && prevLowIdx !== -1 && currLowVal < prevLowVal) {
+        if (num(rsiArr[currLowIdx]) && num(rsiArr[prevLowIdx]) && rsiArr[currLowIdx] > rsiArr[prevLowIdx]) {
+          alerts.push({ type: 'danger', text: 'Divergencia alcista detectada: Precio hace mínimo más bajo, pero RSI hace mínimo más alto.' });
+        }
+      }
+
+      let currHighIdx = -1, currHighVal = -Infinity;
+      for (let j = i; j >= i - 15; j--) {
+        if (h[j] > currHighVal) { currHighVal = h[j]; currHighIdx = j; }
+      }
+      let prevHighIdx = -1, prevHighVal = -Infinity;
+      for (let j = i - 20; j >= i - 35; j--) {
+        if (h[j] > prevHighVal) { prevHighVal = h[j]; prevHighIdx = j; }
+      }
+      if (currHighIdx !== -1 && prevHighIdx !== -1 && currHighVal > prevHighVal) {
+        if (num(rsiArr[currHighIdx]) && num(rsiArr[prevHighIdx]) && rsiArr[currHighIdx] < rsiArr[prevHighIdx]) {
+          alerts.push({ type: 'danger', text: 'Divergencia bajista detectada: Precio hace máximo más alto, pero RSI hace máximo más bajo.' });
+        }
+      }
+    }
+
+    const volLookback = config.volumeLookback || 20;
+    if (i > volLookback) {
+      let avgVol = 0;
+      for (let j = i - 1; j >= i - volLookback; j--) avgVol += v[j];
+      avgVol /= volLookback;
+      const lastVol = v[i];
+      const isBearish = c[i] < bars[i].o;
+      const isBullish = c[i] > bars[i].o;
+
+      if (direction === -1 && isBearish && lastVol < avgVol * (1 - (config.volumeDropPct || 30) / 100)) {
+        alerts.push({ type: 'warn', text: 'Volumen bajo en vela bajista. Posible falta de convicción vendedora.' });
+      } else if (direction === 1 && isBullish && lastVol < avgVol * (1 - (config.volumeDropPct || 30) / 100)) {
+        alerts.push({ type: 'warn', text: 'Volumen bajo en vela alcista. Posible falta de convicción compradora.' });
+      }
+    }
+
+    return alerts;
+  }
+
   function analyze(barsByTf) {
+    const CFG = window.AT_CONFIG || {};
+    const exCfg = CFG.exhaustion || {};
+    
     const tfs = Object.keys(barsByTf || {});
     const perTf = {};
     const valid = [];
@@ -67,6 +151,7 @@
         macroTrend: '—',
         macroMomentum: '—',
         macroVolatility: '—',
+        alerts: [],
         conclusion: 'Datos insuficientes. Se necesitan al menos dos temporalidades con historial suficiente.'
       };
     }
@@ -94,9 +179,11 @@
     const consensusScore = sumAllAdx > 0 ? (sumAgreeAdx / sumAllAdx) * 100 : 0;
 
     let consensusLabel, consensusText;
-    if (consensusScore >= 75) {
+    const thresholds = (CFG.consensus && CFG.consensus.thresholds) || { strong: 75, moderate: 50 };
+
+    if (consensusScore >= thresholds.strong) {
       consensusLabel = overallDirection === 1 ? 'strong_buy' : 'strong_sell';
-    } else if (consensusScore >= 50) {
+    } else if (consensusScore >= thresholds.moderate) {
       consensusLabel = overallDirection === 1 ? 'buy' : 'sell';
     } else {
       consensusLabel = 'neutral';
@@ -110,14 +197,15 @@
     else if (avgAdx >= 18) macroTrend = 'Moderada';
     else macroTrend = 'Débil';
 
+    const order = ['1m', '5m', '15m', '30m', '1h', '4h', '1d'];
     const highestTf = valid.reduce(function (a, b) {
-      const order = ['1m', '5m', '15m', '30m', '1h', '4h', '1d'];
       return order.indexOf(a.tf) > order.indexOf(b.tf) ? a : b;
     }).tf;
 
     const highBars = barsByTf[highestTf];
     let macroMomentum = '—';
     let macroVolatility = '—';
+    let alerts = [];
 
     if (highBars && highBars.length > 30) {
       const hc = highBars.map(function (b) { return b.c; });
@@ -134,13 +222,23 @@
 
       const atrArr = I.atr(hh, hl, hc, 14);
       const lastAtr = atrArr[atrArr.length - 1];
-      const avgAtr = I.sma(atrArr.filter(num), 20);
+      const cleanAtr = atrArr.filter(num);
+      const avgAtr = I.sma(cleanAtr, 20);
       const avgVal = avgAtr[avgAtr.length - 1];
+      
       if (num(lastAtr) && num(avgVal) && avgVal > 0) {
         const ratio = lastAtr / avgVal;
         if (ratio >= 1.3) macroVolatility = 'Alta';
         else if (ratio <= 0.75) macroVolatility = 'Baja';
         else macroVolatility = 'Normal';
+      }
+
+      alerts = detectExhaustion(highBars, overallDirection, exCfg);
+
+      if (consensusScore >= 90 && overallDirection === -1) {
+        alerts.push({ type: 'danger', text: 'Consenso casi unánime bajista. Alta probabilidad de sobre-extensión y rebote técnico inminente.' });
+      } else if (consensusScore >= 90 && overallDirection === 1) {
+        alerts.push({ type: 'danger', text: 'Consenso casi unánime alcista. Alta probabilidad de sobre-extensión y retroceso técnico inminente.' });
       }
     }
 
@@ -165,8 +263,9 @@
       conclusionParts.push('Volatilidad: ' + macroVolatility + '.');
     }
 
-    const agreeCount = valid.filter(function (v) { return v.agree; }).length;
-    conclusionParts.push('Alineación: ' + agreeCount + ' de ' + valid.length + ' temporalidades a favor.');
+    if (alerts.length > 0) {
+      conclusionParts.push('⚠️ PRECAUCIÓN: Se han detectado ' + alerts.length + ' señales de agotamiento. Revisa el panel de alertas antes de operar.');
+    }
 
     return {
       consensusScore: consensusScore,
@@ -177,6 +276,7 @@
       macroTrend: macroTrend,
       macroMomentum: macroMomentum,
       macroVolatility: macroVolatility,
+      alerts: alerts,
       conclusion: conclusionParts.join(' ')
     };
   }
