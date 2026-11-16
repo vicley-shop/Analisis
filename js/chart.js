@@ -11,7 +11,7 @@
     const ctx = canvas.getContext('2d');
     const st = {
       bars: [],
-      count: 100,
+      count: 150,
       offset: 0,
       tf: '',
       digits: 2,
@@ -37,6 +37,8 @@
       if (o && o.digits != null) st.digits = o.digits;
       
       const c = st.bars.map(function (b) { return b.c; });
+      
+      // Calculamos las EMAs con todo el historial disponible
       st.emas.e20 = I.ema(c, 20);
       st.emas.e50 = I.ema(c, 50);
       st.emas.e200 = I.ema(c, 200);
@@ -50,12 +52,13 @@
     }
 
     function zoom(f) {
-      st.count = Math.max(20, Math.min(300, Math.round(st.count * f)));
+      // Permitimos un rango de 20 a 1000 velas
+      st.count = Math.max(20, Math.min(1000, Math.round(st.count * f)));
       schedule();
     }
 
     function reset() {
-      st.count = 100;
+      st.count = 150;
       st.offset = 0;
       schedule();
     }
@@ -134,19 +137,19 @@
       if (st.zones.ote) {
         const zTop = y(st.zones.ote.top);
         const zBot = y(st.zones.ote.bottom);
-        ctx.fillStyle = 'rgba(168, 85, 247, 0.1)';
+        ctx.fillStyle = 'rgba(168, 85, 247, 0.15)'; // Morado
         ctx.fillRect(PAD.l, zTop, plotW, zBot - zTop);
       }
       if (st.zones.fvg) {
         const zTop = y(st.zones.fvg.top);
         const zBot = y(st.zones.fvg.bottom);
-        ctx.fillStyle = 'rgba(59, 130, 246, 0.15)';
+        ctx.fillStyle = 'rgba(59, 130, 246, 0.15)'; // Azul
         ctx.fillRect(PAD.l, zTop, plotW, zBot - zTop);
       }
       if (st.zones.ob) {
         const zTop = y(st.zones.ob.top);
         const zBot = y(st.zones.ob.bottom);
-        ctx.fillStyle = 'rgba(239, 68, 68, 0.15)';
+        ctx.fillStyle = st.zones.ob.direction === 1 ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)'; // Verde o Rojo
         ctx.fillRect(PAD.l, zTop, plotW, zBot - zTop);
       }
 

@@ -267,7 +267,9 @@
     }
 
     if (state.bars[state.tf] && state.bars[state.tf].length > 50) {
-      const smcEval = SMC.evaluate(state.bars[state.tf], res.overallDirection);
+      const closedBars = state.bars[state.tf].slice(0, -1);
+      
+      const smcEval = SMC.evaluate(closedBars, res.overallDirection);
       
       if (res.consensusScore < 50) {
         smcEval.score = 0;
