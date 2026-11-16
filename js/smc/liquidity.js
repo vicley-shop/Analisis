@@ -5,10 +5,10 @@ window.AT.smc.liquidity = (function () {
   'use strict';
 
   const DEFAULT_SWEEP_ATR_MULT = 0.25;
-  const DEFAULT_SWEEP_WINDOW = 3;
-  const DEFAULT_MIN_PENETRATION_ATR = 0.01;
+  const DEFAULT_SWEEP_WINDOW = 5;
+  const DEFAULT_MIN_PENETRATION_ATR = 0.30;
   const DEFAULT_EQ_TOLERANCE_ATR_MULT = 0.10;
-  const DEFAULT_LOOKBACK_PIVOTS = 3;
+  const DEFAULT_LOOKBACK_PIVOTS = 5;
 
   function cfg() {
     return (window.AT_CONFIG && window.AT_CONFIG.smc) || {};
