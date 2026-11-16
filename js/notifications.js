@@ -25,6 +25,21 @@ window.AT.notifications = (function() {
     messaging = firebase.messaging();
     db = firebase.firestore();
 
+    const btn = document.getElementById('btnActivateNotif');
+    
+    if (Notification.permission === 'granted') {
+      updateButton(true);
+      getToken();
+    } else if (Notification.permission === 'denied') {
+      updateButton(false, '🚫 Bloqueadas');
+      if (btn) btn.disabled = true;
+    } else {
+      updateButton(false);
+      if (btn) {
+        btn.addEventListener('click', requestPermission);
+      }
+    }
+
     messaging.onMessage(function(payload) {
       if (Notification.permission === 'granted') {
         new Notification(payload.notification.title, {
@@ -33,14 +48,35 @@ window.AT.notifications = (function() {
         });
       }
     });
+  }
 
-    if (Notification.permission === 'granted') {
-      getToken();
-    } else if (Notification.permission === 'default') {
-      Notification.requestPermission().then(function(permission) {
-        if (permission === 'granted') getToken();
-      });
+  function updateButton(active, text) {
+    const btn = document.getElementById('btnActivateNotif');
+    if (!btn) return;
+    
+    if (active) {
+      btn.textContent = '✅ Notificaciones Activadas';
+      btn.classList.add('active');
+      btn.disabled = true;
+    } else if (text) {
+      btn.textContent = text;
     }
+  }
+
+  function requestPermission() {
+    const btn = document.getElementById('btnActivateNotif');
+    if (btn) btn.textContent = '⏳ Solicitando...';
+
+    Notification.requestPermission().then(function(permission) {
+      if (permission === 'granted') {
+        updateButton(true);
+        getToken();
+        showTestNotification();
+      } else {
+        updateButton(false, '❌ Permiso denegado');
+        if (btn) btn.disabled = true;
+      }
+    });
   }
 
   function getToken() {
@@ -50,13 +86,24 @@ window.AT.notifications = (function() {
           token: currentToken,
           createdAt: firebase.firestore.FieldValue.serverTimestamp(),
           activo: true
+        }).then(function() {
+          console.log('Token FCM guardado en Firestore.');
         }).catch(function(err) {
-          console.error('Error al guardar token:', err);
+          console.error('Error al guardar token en Firestore:', err);
         });
       }
     }).catch(function(err) {
       console.error('Error al obtener el token:', err);
     });
+  }
+
+  function showTestNotification() {
+    if (Notification.permission === 'granted') {
+      new Notification('¡Notificaciones Activadas!', {
+        body: 'Market Consensus PRO te avisará cuando haya una oportunidad de compra o venta.',
+        icon: 'https://cdn-icons-png.flaticon.com/512/2933/2933190.png'
+      });
+    }
   }
 
   return { init: init };
