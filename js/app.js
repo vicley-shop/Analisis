@@ -91,6 +91,14 @@
       }
     });
 
+    if (chart) {
+      const bars = state.bars[state.tf];
+      const inst = CFG.symbols[state.symbol];
+      if (bars && bars.length && inst) {
+        chart.setData(bars, { tf: state.tf, digits: inst.digits, symbol: state.symbol });
+      }
+    }
+
     updateSymbolBarPrices();
     renderPrice();
     scheduleAnalysis(newBar);
@@ -304,12 +312,14 @@
   function renderMtf() {
     const a = state.analysis;
     const box = $('mtf');
-    const tfs = CFG.timeframes.list || ['15m', '1h', '4h', '1d'];
+    const allTfs = CFG.timeframes.list || ['15m', '1h', '4h', '1d'];
+    const optional = CFG.timeframes.optional || [];
 
-    if (box.children.length !== tfs.length) {
+    if (box.children.length !== allTfs.length) {
       let html = '';
-      tfs.forEach(function (tf) {
-        html += '<button data-tf="' + esc(tf) + '">' +
+      allTfs.forEach(function (tf) {
+        const isOpt = optional.indexOf(tf) !== -1;
+        html += '<button data-tf="' + esc(tf) + '"' + (isOpt ? ' data-optional="true"' : '') + '>' +
           '<span class="tfn">' + esc(tf) + '</span>' +
           '<span class="lab neutral">—</span>' +
           '</button>';
@@ -748,6 +758,20 @@
     });
   }
 
+  function initMtfToggle() {
+    const toggle = $('mtfToggle');
+    const mtfCard = $('mtfCard');
+    const conclusionCard = $('conclusionCard');
+    if (!toggle || !mtfCard || !conclusionCard) return;
+
+    toggle.addEventListener('click', function () {
+      const isExpanded = mtfCard.classList.toggle('expanded');
+      conclusionCard.classList.toggle('shrunk', isExpanded);
+      toggle.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
+      toggle.setAttribute('aria-label', isExpanded ? 'Ocultar temporalidades adicionales' : 'Mostrar temporalidades adicionales');
+    });
+  }
+
   function startFeed() {
     feed = D.createFeed(Object.keys(CFG.symbols), {
       tick: onTick,
@@ -771,6 +795,7 @@
 
   function init() {
     buildSymbolBar();
+    initMtfToggle();
     initChart();
     startFeed();
 

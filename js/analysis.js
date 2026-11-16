@@ -318,7 +318,7 @@
     const c = cfg();
     const consensusCfg = c.consensus || {};
     const thresholds = consensusCfg.thresholds || { strong: 70, moderate: 50 };
-    const minValidTfs = consensusCfg.minimumValidTfs || 2;
+    const minValidTfs = consensusCfg.minimumValidTfs || 3;
     const tieBreak = consensusCfg.tieBreak || 'higher_tf';
     const entryTf = opts.currentTf || (c.timeframes && c.timeframes.entry) || '1h';
     const symbol = opts.symbol || 'XAUUSD';
@@ -453,6 +453,10 @@
 
     if (marketState.open && !liquidityState.overlap && !marketState.alwaysOpen) {
       alerts.push({ type: 'info', text: 'Liquidez reducida fuera del overlap Londres-NY. Spread puede ser más ancho.' });
+    }
+
+    if (marketState.alwaysOpen && !liquidityState.overlap) {
+      alerts.push({ type: 'info', text: 'Mercado 24/7 pero fuera del overlap Londres-NY. Liquidez reducida y spread más ancho, especialmente en activos de menor capitalización como BNB.' });
     }
 
     const currentPrice = valid[0].data.price;

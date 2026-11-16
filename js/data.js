@@ -83,7 +83,8 @@
     }).catch(function (e) {
       if (attempt < maxAttempts && retryable(e)) {
         const delay = Math.min(2000, Math.pow(2, attempt - 1) * 300);
-        return new Promise(function (resolve) { setTimeout(resolve, delay); })
+        const jitter = Math.random() * 200;
+        return new Promise(function (resolve) { setTimeout(resolve, delay + jitter); })
           .then(function () { return getJSON(path, timeoutMs, attempt + 1); });
       }
       throw e;
