@@ -25,6 +25,9 @@ jobs:
         working-directory: ./functions
 
       - name: Deploy to Firebase
-        run: firebase deploy --only functions --project trading-974f1 --non-interactive
+        run: |
+          echo "$GCP_SA_KEY" > $HOME/gcp_key.json
+          export GOOGLE_APPLICATION_CREDENTIALS=$HOME/gcp_key.json
+          firebase deploy --only functions --project trading-974f1 --non-interactive
         env:
           GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
