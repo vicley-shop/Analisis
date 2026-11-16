@@ -63,6 +63,20 @@
     <p id="verdictReason" class="verdict-reason">Analizando condiciones de mercado...</p>
   </div>
 
+  <div class="card smc-card" id="smcCard">
+    <h2>Análisis Institucional (SMC)</h2>
+    <div class="smc-header">
+      <span class="muted small">Confluencia</span>
+      <strong id="smcScore" class="smc-score">0%</strong>
+    </div>
+    <div class="smc-bar-bg">
+      <div id="smcBarFill" class="smc-bar-fill" style="width: 0%"></div>
+    </div>
+    <ul id="smcReasons" class="smc-reasons">
+      <li class="muted">Esperando datos...</li>
+    </ul>
+  </div>
+
   <div class="card alert-card" id="alertCard" hidden>
     <h2>⚠️ Alertas de Agotamiento</h2>
     <ul id="alertList" class="alert-list"></ul>
@@ -115,10 +129,6 @@
     <p id="conclusionText" class="conclusion-text">Esperando datos suficientes para generar un veredicto...</p>
   </div>
 
-  <div class="notif-container">
-    <button id="btnActivateNotif" class="btn-notif">🔔 Activar notificaciones</button>
-  </div>
-
 </main>
 
 <footer class="foot">
@@ -126,16 +136,18 @@
   <p>Fines educativos. No constituye asesoramiento financiero.</p>
 </footer>
 
-<script src="https://www.gstatic.com/firebasejs/13.3.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/13.3.0/firebase-messaging-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/13.3.0/firebase-firestore-compat.js"></script>
-
 <script defer src="js/config.js"></script>
 <script defer src="js/indicators.js"></script>
 <script defer src="js/data.js"></script>
 <script defer src="js/analysis.js"></script>
+
+<script defer src="js/smc/structure.js"></script>
+<script defer src="js/smc/liquidity.js"></script>
+<script defer src="js/smc/zones.js"></script>
+<script defer src="js/smc/ote.js"></script>
+<script defer src="js/smc-engine.js"></script>
+
 <script defer src="js/chart.js"></script>
-<script defer src="js/notifications.js"></script>
 <script defer src="js/app.js"></script>
 </body>
 </html>
