@@ -9,6 +9,7 @@
   --muted: #9aa4b2;
   --muted2: #6b7785;
   --accent: #22c55e;
+  --warn: #f59e0b;
   --up: #22c55e;
   --down: #ef4444;
   --sbuy: #22c55e;
@@ -117,7 +118,7 @@ h2 {
 }
 
 .dot.ok { background: var(--up); box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.12); }
-.dot.warn { background: #f59e0b; box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.12); }
+.dot.warn { background: var(--warn); box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.12); }
 .dot.bad { background: var(--down); box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.12); }
 
 .symbols {
@@ -203,6 +204,15 @@ main { padding: 8px 14px 28px; }
 .neutral { color: var(--neu); }
 .sell { color: var(--sell); }
 .strong_sell { color: var(--ssell); }
+
+.alert-card {
+  border-color: rgba(245, 158, 11, 0.4);
+  background: linear-gradient(155deg, rgba(245, 158, 11, 0.05), rgba(18, 24, 32, 0.98));
+}
+.alert-card h2 { color: var(--warn); font-size: 14px; margin-bottom: 12px; }
+.alert-list { margin: 0; padding-left: 20px; color: #d1d5db; font-size: 13px; line-height: 1.6; }
+.alert-list li { margin-bottom: 6px; }
+.alert-list li strong { color: var(--warn); }
 
 .metrics-grid {
   display: grid;
