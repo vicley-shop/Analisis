@@ -674,7 +674,6 @@ button:focus-visible, a:focus-visible {
 
 .mtf-card {
   grid-column: span 4;
-  transition: grid-column 240ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .mtf-card.expanded { grid-column: span 7; }
@@ -765,7 +764,6 @@ button:focus-visible, a:focus-visible {
 
 .conclusion-card {
   grid-column: span 8;
-  transition: grid-column 240ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .conclusion-card.shrunk { grid-column: span 5; }
