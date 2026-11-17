@@ -11,11 +11,11 @@
   <title>Market Consensus PRO</title>
   <link rel="stylesheet" href="css/style.css">
   <style>
-    .skip-link { position: absolute; top: -100px; left: 10px; z-index: 9999; padding: 12px 18px; background: #5b8def; color: #0b0e14; border-radius: 8px; font-weight: 700; font-size: 14px; text-decoration: none; }
-    .skip-link:focus { top: 10px; }
-    button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid #5b8def; outline-offset: 3px; }
-    [hidden] { display: none !important; }
-    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+    .skip-link{position:absolute;top:-100px;left:10px;z-index:9999;padding:12px 18px;background:#5b8def;color:#0b0e14;border-radius:8px;font-weight:700;font-size:14px;text-decoration:none;}
+    .skip-link:focus{top:10px;}
+    button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid #5b8def;outline-offset:3px;}
+    [hidden]{display:none!important;}
+    .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;}
   </style>
 </head>
 <body>
@@ -23,9 +23,9 @@
 <a class="skip-link" href="#mainContent">Saltar al contenido principal</a>
 
 <noscript>
-  <div style="padding: 48px 24px; text-align: center; color: #e6edf3; background: #0b0e14; min-height: 100vh; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 16px;">
-    <h1 style="margin: 0; font-size: 22px; font-weight: 700;">Market Consensus PRO</h1>
-    <p style="margin: 0; max-width: 480px; font-size: 14px; color: #8b98ab;">Este panel requiere JavaScript habilitado para cargar datos de mercado, calcular el consenso multi-temporal y renderizar el gráfico.</p>
+  <div style="padding:48px 24px;text-align:center;color:#e6edf3;background:#0b0e14;min-height:100vh;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:16px;">
+    <h1 style="margin:0;font-size:22px;font-weight:700;">Market Consensus PRO</h1>
+    <p style="margin:0;max-width:480px;font-size:14px;color:#8b98ab;">Este panel requiere JavaScript habilitado para cargar datos de mercado, calcular el consenso multi-temporal y renderizar el gráfico.</p>
   </div>
 </noscript>
 
@@ -38,7 +38,7 @@
         <span class="brand-pro">PRO</span>
       </span>
     </div>
-    <nav class="symbols" id="symbolBar" role="group" aria-label="Seleccionar mercado"></nav>
+    <nav class="symbols" id="symbolBar" role="toolbar" aria-label="Seleccionar mercado"></nav>
     <div class="status" role="status" aria-live="polite">
       <span class="dot" id="statusDot"></span>
       <span id="statusText">Conectando…</span>
@@ -85,17 +85,17 @@
         <circle cx="100" cy="100" r="5" class="needle-hub"/>
       </g>
     </svg>
-    <div id="gaugeLabel" class="gauge-label neutral">—</div>
-    <div id="gaugeScore" class="gauge-score"></div>
+    <div id="gaugeLabel" class="gauge-label neutral" aria-live="polite">—</div>
+    <div id="gaugeScore" class="gauge-score" aria-live="polite"></div>
   </section>
 
   <section class="smc-card card" id="smcCard" aria-labelledby="smc-label">
     <header class="card-head">
       <span class="card-label" id="smc-label">Análisis institucional (SMC)</span>
-      <strong id="smcScore" class="smc-score">0%</strong>
+      <strong id="smcScore" class="smc-score" aria-live="polite">0%</strong>
     </header>
     <div class="smc-bar-bg" aria-hidden="true">
-      <div id="smcBarFill" class="smc-bar-fill" style="width: 0%"></div>
+      <div id="smcBarFill" class="smc-bar-fill" style="width:0%"></div>
     </div>
     <ul id="smcReasons" class="smc-reasons">
       <li class="muted">Esperando datos...</li>
@@ -105,19 +105,19 @@
   <div class="metrics-grid" role="group" aria-label="Métricas macro">
     <div class="card metric-card">
       <span class="card-label">Tendencia</span>
-      <strong id="macroTrend" class="metric-val">—</strong>
+      <strong id="macroTrend" class="metric-val" aria-live="polite">—</strong>
     </div>
     <div class="card metric-card">
       <span class="card-label">Momentum</span>
-      <strong id="macroMomentum" class="metric-val">—</strong>
+      <strong id="macroMomentum" class="metric-val" aria-live="polite">—</strong>
     </div>
     <div class="card metric-card">
       <span class="card-label">Volatilidad</span>
-      <strong id="macroVolatility" class="metric-val">—</strong>
+      <strong id="macroVolatility" class="metric-val" aria-live="polite">—</strong>
     </div>
     <div class="card metric-card">
       <span class="card-label">Estructura</span>
-      <strong id="macroStructure" class="metric-val">—</strong>
+      <strong id="macroStructure" class="metric-val" aria-live="polite">—</strong>
     </div>
   </div>
 
@@ -126,42 +126,42 @@
       <span class="card-label" id="chart-label">Gráfico</span>
       <div id="legend" class="legend muted small" aria-live="polite">&nbsp;</div>
       <div class="chart-tools">
-        <button id="chartFullscreen" aria-label="Pantalla completa" title="Pantalla completa">⛶</button>
-        <button id="zoomOut" aria-label="Alejar" title="Alejar">−</button>
-        <button id="zoomIn" aria-label="Acercar" title="Acercar">+</button>
-        <button id="zoomReset" aria-label="Centrar" title="Centrar">⟲</button>
-        <button id="drawToggle" class="draw-toggle" aria-label="Herramientas de dibujo" aria-haspopup="menu" aria-expanded="false" title="Dibujar (solo en pantalla completa)" hidden>✏️</button>
+        <button type="button" id="chartFullscreen" aria-label="Pantalla completa" title="Pantalla completa">⛶</button>
+        <button type="button" id="zoomOut" aria-label="Alejar" title="Alejar">−</button>
+        <button type="button" id="zoomIn" aria-label="Acercar" title="Acercar">+</button>
+        <button type="button" id="zoomReset" aria-label="Centrar" title="Centrar">⟲</button>
+        <button type="button" id="drawToggle" class="draw-toggle" aria-label="Herramientas de dibujo" aria-haspopup="menu" aria-expanded="false" title="Dibujar (solo en pantalla completa)" hidden>✏️</button>
       </div>
     </header>
     <div class="drawing-menu" id="drawingMenu" role="menu" aria-label="Herramientas de dibujo" hidden>
-      <button class="tool-btn active" data-tool="cursor" role="menuitemradio" aria-checked="true">
+      <button type="button" class="tool-btn active" data-tool="cursor" role="menuitemradio" aria-checked="true">
         <span class="tool-icon">↖</span><span>Seleccionar / Pan</span>
       </button>
       <div class="drawing-sep" role="separator"></div>
-      <button class="tool-btn" data-tool="line" role="menuitemradio" aria-checked="false">
+      <button type="button" class="tool-btn" data-tool="line" role="menuitemradio" aria-checked="false">
         <span class="tool-icon">╱</span><span>Línea de tendencia</span>
       </button>
-      <button class="tool-btn" data-tool="h" role="menuitemradio" aria-checked="false">
+      <button type="button" class="tool-btn" data-tool="h" role="menuitemradio" aria-checked="false">
         <span class="tool-icon">─</span><span>Línea horizontal</span>
       </button>
-      <button class="tool-btn" data-tool="v" role="menuitemradio" aria-checked="false">
+      <button type="button" class="tool-btn" data-tool="v" role="menuitemradio" aria-checked="false">
         <span class="tool-icon">│</span><span>Línea vertical</span>
       </button>
-      <button class="tool-btn" data-tool="rect" role="menuitemradio" aria-checked="false">
+      <button type="button" class="tool-btn" data-tool="rect" role="menuitemradio" aria-checked="false">
         <span class="tool-icon">▭</span><span>Rectángulo</span>
       </button>
-      <button class="tool-btn" data-tool="fib" role="menuitemradio" aria-checked="false">
+      <button type="button" class="tool-btn" data-tool="fib" role="menuitemradio" aria-checked="false">
         <span class="tool-icon">π</span><span>Fibonacci</span>
       </button>
       <div class="drawing-sep" role="separator"></div>
-      <button class="tool-btn" id="drawUndo" role="menuitem">
+      <button type="button" class="tool-btn" id="drawUndo" role="menuitem">
         <span class="tool-icon">↶</span><span>Deshacer último</span>
       </button>
-      <button class="tool-btn danger" id="drawClear" role="menuitem">
+      <button type="button" class="tool-btn danger" id="drawClear" role="menuitem">
         <span class="tool-icon">🗑</span><span>Borrar todo</span>
       </button>
     </div>
-    <canvas id="chart" role="img" aria-label="Gráfico de velas japonesas con EMA 20, 50 y 200, y zonas de Order Blocks, Fair Value Gaps y OTE"></canvas>
+    <canvas id="chart" role="img" tabindex="0" aria-label="Gráfico de velas japonesas con EMA 20, 50 y 200, y zonas de Order Blocks, Fair Value Gaps y OTE"></canvas>
     <div class="legend-ema muted small">
       <span class="k e1"></span> EMA 20
       <span class="k e2"></span> EMA 50
@@ -172,11 +172,11 @@
   <section class="card mtf-card" id="mtfCard" aria-labelledby="mtf-label">
     <header class="mtf-head">
       <span class="card-label" id="mtf-label">Lectura por temporalidad</span>
-      <button id="mtfToggle" class="mtf-toggle" aria-label="Mostrar más temporalidades" aria-expanded="false" aria-controls="mtf">
+      <button type="button" id="mtfToggle" class="mtf-toggle" aria-label="Mostrar más temporalidades" aria-expanded="false" aria-controls="mtf">
         <span class="mtf-toggle-icon" aria-hidden="true">›</span>
       </button>
     </header>
-    <div class="mtf" id="mtf" role="group" aria-label="Lectura por temporalidad"></div>
+    <div class="mtf" id="mtf" role="tablist" aria-label="Lectura por temporalidad"></div>
   </section>
 
   <section class="card conclusion-card" id="conclusionCard" aria-labelledby="conclusion-label">
@@ -186,7 +186,7 @@
 
   <section class="card alert-card" id="alertCard" hidden aria-labelledby="alert-label">
     <span class="card-label warn" id="alert-label">Alertas de agotamiento</span>
-    <ul id="alertList" class="alert-list" role="alert" aria-live="assertive"></ul>
+    <ul id="alertList" class="alert-list" aria-live="polite"></ul>
   </section>
 
 </main>
