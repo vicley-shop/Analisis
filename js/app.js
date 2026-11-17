@@ -25,7 +25,8 @@
     currentTool: 'cursor',
     drawMenuOpen: false,
     tickBuffer: new Map(),
-    rafId: 0
+    rafId: 0,
+    gapRefill: {}
   };
 
   let chart = null;
@@ -70,6 +71,27 @@
     });
   }
 
+  function refillGap(tf) {
+    if (!state.gapRefill) state.gapRefill = {};
+    if (state.gapRefill[tf]) return;
+    state.gapRefill[tf] = true;
+
+    const myId = state.requestId;
+    D.fetchBars(state.symbol, tf, 1000).then(function (bars) {
+      if (state.requestId !== myId) return;
+      if (bars && bars.length) {
+        state.bars[tf] = bars;
+        if (chart && state.tf === tf) {
+          const inst = CFG.symbols[state.symbol];
+          if (inst) chart.setData(bars, { tf: state.tf, digits: inst.digits, symbol: state.symbol });
+        }
+        scheduleAnalysis(true);
+      }
+    }).catch(function () { void 0; }).then(function () {
+      if (state.gapRefill) delete state.gapRefill[tf];
+    });
+  }
+
   function processTick(tick) {
     if (!tick || !tick.symbol) return;
     state.ticks[tick.symbol] = tick;
@@ -88,6 +110,10 @@
       if (ms && state.bars[tf] && state.bars[tf].length) {
         const result = D.applyTick(state.bars[tf], ms, tick.mid, tick.ts);
         if (result === 'new') newBar = true;
+        if (result === 'gap') {
+          newBar = true;
+          refillGap(tf);
+        }
       }
     });
 
@@ -195,9 +221,6 @@
       const r = a.verdictRisk;
       text += ' · Stop ' + fmt(state.symbol, r.stop) + ' · Target ' + fmt(state.symbol, r.target);
     }
-    if (!a.marketOpen) {
-      text = '⚠️ ' + text;
-    }
     reason.textContent = text;
   }
 
@@ -209,6 +232,7 @@
 
     if (!smc) {
       scoreEl.textContent = '0%';
+      scoreEl.style.color = 'var(--accent)';
       barEl.style.width = '0%';
       barEl.style.backgroundColor = 'var(--accent)';
       reasonsEl.innerHTML = '<li class="muted">Esperando datos...</li>';
@@ -231,13 +255,21 @@
 
     const lines = [];
     const bd = smc.breakdown || {};
-    const order = ['mss', 'sweep', 'fvg', 'ob', 'ote', 'penalty'];
-    const names = { mss: 'Estructura', sweep: 'Sweep', fvg: 'FVG', ob: 'Order Block', ote: 'OTE', penalty: 'Penalización' };
+    const order = ['mss', 'sweep', 'fvg', 'ob', 'ote', 'penalty', 'vetoed'];
+    const names = {
+      mss: 'Estructura',
+      sweep: 'Sweep',
+      fvg: 'FVG',
+      ob: 'Order Block',
+      ote: 'OTE',
+      penalty: 'Penalización',
+      vetoed: 'Veto'
+    };
 
     order.forEach(function (key) {
       const e = bd[key];
       if (!e || !e.weighted) return;
-      const sign = key === 'penalty' ? '−' : '+';
+      const sign = (key === 'penalty' || key === 'vetoed') ? '−' : '+';
       const val = Math.abs(e.weighted).toFixed(1);
       const detail = e.reason ? ' — ' + e.reason : '';
       lines.push('<li>' + esc(names[key] || key) + ': ' + sign + val + esc(detail) + '</li>');
@@ -249,7 +281,7 @@
 
     if (smc.vetoes && smc.vetoes.length) {
       smc.vetoes.forEach(function (v) {
-        lines.push('<li style="color: var(--warn)">⚠️ ' + esc(v) + '</li>');
+        lines.push('<li style="color: var(--warn)">⚠ ' + esc(v) + '</li>');
       });
     }
 
@@ -319,7 +351,10 @@
       let html = '';
       allTfs.forEach(function (tf) {
         const isOpt = optional.indexOf(tf) !== -1;
-        html += '<button data-tf="' + esc(tf) + '"' + (isOpt ? ' data-optional="true"' : '') + '>' +
+        const selected = tf === state.tf ? 'true' : 'false';
+        html += '<button type="button" role="tab" data-tf="' + esc(tf) + '"' +
+          ' aria-selected="' + selected + '"' +
+          (isOpt ? ' data-optional="true"' : '') + '>' +
           '<span class="tfn">' + esc(tf) + '</span>' +
           '<span class="lab neutral">—</span>' +
           '</button>';
@@ -331,7 +366,13 @@
       const tf = btn.dataset.tf;
       const tfData = a && a.perTf ? a.perTf[tf] : null;
       const active = tf === state.tf;
-      if (active) btn.classList.add('active'); else btn.classList.remove('active');
+      if (active) {
+        btn.classList.add('active');
+        btn.setAttribute('aria-selected', 'true');
+      } else {
+        btn.classList.remove('active');
+        btn.setAttribute('aria-selected', 'false');
+      }
 
       const lab = btn.querySelector('.lab');
       if (!lab) return;
@@ -366,11 +407,9 @@
     if (!inst) return;
     chart.setData(bars, { tf: state.tf, digits: inst.digits, symbol: state.symbol });
 
-    if (state.smcResult && state.smcResult.zones) {
-      chart.setZones(state.smcResult.zones);
-    } else {
-      chart.setZones(null);
-    }
+    const z = state.smcResult && state.smcResult.zones;
+    const hasZones = z && (z.ob || z.fvg || z.ote);
+    chart.setZones(hasZones ? z : null);
   }
 
   function renderAll() {
@@ -417,10 +456,16 @@
     const entryBarsRaw = state.bars[entryTf];
 
     if (entryBarsRaw && entryBarsRaw.length > 50) {
-      const closedBars = entryBarsRaw.slice(0, -1);
+      const analysisCfg = CFG.analysis || {};
+      const useClosed = analysisCfg.useClosedCandlesOnly !== false;
+      const closedBars = (useClosed && entryBarsRaw.length > 1)
+        ? entryBarsRaw.slice(0, -1)
+        : entryBarsRaw;
+
       const smcCtx = {
         confidence: res.confidence,
         marketOpen: res.marketOpen,
+        sessionActive: res.highLiquidity,
         entryTf: entryTf
       };
       state.smcResult = SMC.evaluate(closedBars, res.overallDirection, smcCtx);
@@ -431,9 +476,11 @@
         reasons: ['Esperando suficientes velas históricas…'],
         vetoes: ['Historial insuficiente'],
         breakdown: {},
-        zones: {},
+        zones: { ob: null, fvg: null, ote: null, allOBs: [], allFVGs: [] },
         direction: 0,
-        trend: 'Débil'
+        trend: 'Débil',
+        vetoed: true,
+        grade: 'Débil'
       };
     }
 
@@ -481,7 +528,7 @@
       if (state.requestId !== myId) return null;
       state.bars = {};
       results.forEach(function (r, i) {
-        if (r.ok) state.bars[tfs[i]] = r.v;
+        if (r && r.ok) state.bars[tfs[i]] = r.v;
       });
       state.loading = false;
       runAnalysis();
@@ -489,6 +536,15 @@
     }).catch(function (err) {
       if (state.requestId !== myId) return null;
       state.loading = false;
+      const partial = err && err.partial;
+      if (partial && Array.isArray(partial) && partial.length === tfs.length) {
+        state.bars = {};
+        partial.forEach(function (r, i) {
+          if (r && r.ok) state.bars[tfs[i]] = r.v;
+        });
+        runAnalysis();
+        return partial;
+      }
       console.error('loadAllBars:', err.message || err);
       renderAll();
       return null;
@@ -497,15 +553,23 @@
 
   function selectSymbol(sym) {
     if (state.symbol === sym) return;
+    const old = state.symbol;
     state.symbol = sym;
     state.bars = {};
     state.analysis = null;
     state.smcResult = null;
     state.lastVerdictState = 'wait';
+    state.gapRefill = {};
+    delete state.ticks[old];
 
     Array.prototype.forEach.call($('symbolBar').children, function (b) {
-      if (b.dataset.sym === sym) b.classList.add('active');
-      else b.classList.remove('active');
+      if (b.dataset.sym === sym) {
+        b.classList.add('active');
+        b.setAttribute('aria-pressed', 'true');
+      } else {
+        b.classList.remove('active');
+        b.setAttribute('aria-pressed', 'false');
+      }
     });
 
     renderAll();
@@ -519,7 +583,9 @@
       const def = CFG.symbols[sym];
       if (def.enabled === false) return;
       const b = document.createElement('button');
+      b.type = 'button';
       b.className = 'sym' + (sym === state.symbol ? ' active' : '');
+      b.setAttribute('aria-pressed', sym === state.symbol ? 'true' : 'false');
       b.dataset.sym = sym;
       b.innerHTML = '<span class="sym-name">' + esc(sym) + '</span>' +
                     '<span class="sym-price">—</span>' +
@@ -805,7 +871,7 @@
         ticks.forEach(function (t) { state.ticks[t.symbol] = t; });
         updateSymbolBarPrices();
         renderAll();
-      }).catch(function () {});
+      }).catch(function () { void 0; });
     });
   }
 

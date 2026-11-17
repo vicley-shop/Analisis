@@ -37,6 +37,19 @@
     return tool === 'line' || tool === 'h' || tool === 'v' || tool === 'rect' || tool === 'fib';
   }
 
+  function emptyZones() {
+    return { ob: null, fvg: null, ote: null };
+  }
+
+  function normalizeZones(zones) {
+    if (!zones || typeof zones !== 'object') return emptyZones();
+    return {
+      ob: zones.ob || null,
+      fvg: zones.fvg || null,
+      ote: zones.ote || null
+    };
+  }
+
   function create(canvas, opts) {
     opts = opts || {};
     const ctx = canvas.getContext('2d');
@@ -58,7 +71,7 @@
       resizeTimer: null,
       emas: { e20: [], e50: [], e200: [] },
       emasMeta: { lastLen: 0, firstT: 0, lastC: NaN },
-      zones: { ob: null, fvg: null, ote: null },
+      zones: emptyZones(),
       tool: 'cursor',
       drawings: [],
       draft: null,
@@ -94,7 +107,7 @@
       if (st.drawings.length > max) st.drawings = st.drawings.slice(-max);
       try {
         window.localStorage.setItem(scopeKey(), JSON.stringify(st.drawings));
-      } catch (e) {}
+      } catch (e) { void 0; }
     }
 
     function newId() {
@@ -152,8 +165,8 @@
     }
 
     function screenToData(px, py, r, bounds, plotW, plotH) {
-      const relX = (px - PAD.l) / plotW;
-      const idx = r.start + relX * r.count;
+      const step = plotW / r.count;
+      const idx = r.start + (px - PAD.l - step / 2) / step;
       const t = timeAtIndex(idx);
       const relY = (py - PAD.t) / plotH;
       const price = bounds.hi - relY * (bounds.hi - bounds.lo);
@@ -361,14 +374,15 @@
       const newSymbol = o.symbol || st.symbol;
       const newTf = o.tf || st.tf;
       const scopeChanged = (newSymbol !== st.symbol) || (newTf !== st.tf);
-      const identityChanged = newLen > 0 && prevLen > 0 && newFirstT !== st.emasMeta.firstT;
+      const bufferRotated = newLen > 0 && prevLen > 0 && newFirstT !== st.emasMeta.firstT;
+      const identityChanged = scopeChanged || bufferRotated;
 
       st.bars = newBars;
       if (o.tf) st.tf = o.tf;
       if (o.symbol) st.symbol = o.symbol;
       if (o.digits != null) st.digits = o.digits;
 
-      if (scopeChanged || identityChanged) {
+      if (scopeChanged) {
         st.draft = null;
         st.pendingDraw = null;
         loadDrawings();
@@ -378,7 +392,9 @@
 
       if (identityChanged || prevLen === 0 || newLen < prevLen) {
         st.emas = computeEmas(closes);
-        st.offset = 0;
+        if (scopeChanged || bufferRotated) {
+          st.offset = 0;
+        }
       } else if (newLen === prevLen) {
         if (prevLen === 1) {
           st.emas = computeEmas(closes);
@@ -403,7 +419,7 @@
     }
 
     function setZones(zones) {
-      st.zones = zones || { ob: null, fvg: null, ote: null };
+      st.zones = normalizeZones(zones);
       schedule();
     }
 
@@ -617,6 +633,11 @@
       return Math.sqrt(dx * dx + dy * dy);
     }
 
+    function insidePlot(p, dims) {
+      return p.x >= PAD.l && p.x <= PAD.l + dims.plotW &&
+             p.y >= PAD.t && p.y <= PAD.t + dims.plotH;
+    }
+
     function onPointerDown(e) {
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
@@ -630,7 +651,7 @@
         const r = barsRange();
         if (!r) return;
         const dims = plotDims();
-        if (p.x < PAD.l || p.x > PAD.l + dims.plotW || p.y < PAD.t || p.y > PAD.t + dims.plotH) return;
+        if (!insidePlot(p, dims)) return;
 
         const bounds = computeBounds(r);
         const dataPoint = screenToData(p.x, p.y, r, bounds, dims.plotW, dims.plotH);
@@ -721,12 +742,13 @@
     }
 
     function onPointerUp(e) {
+      const wasCancel = e.type === 'pointercancel';
       pointers.delete(e.pointerId);
 
       if (st.pendingDraw && st.draft) {
         const p = localPoint(e);
         const movedPx = Math.hypot(p.x - st.pendingDraw.startPx, p.y - st.pendingDraw.startPy);
-        if (movedPx >= MIN_DRAW_PIXELS) {
+        if (!wasCancel && movedPx >= MIN_DRAW_PIXELS) {
           st.drawings.push({
             id: newId(),
             type: st.draft.type,
@@ -741,7 +763,14 @@
       }
 
       if (pointers.size < 2) st.pinchStart = null;
-      if (pointers.size === 0) st.drag = null;
+      if (pointers.size === 0) {
+        st.drag = null;
+        if (wasCancel) {
+          st.px = null;
+          st.py = null;
+          if (opts.onHover) opts.onHover(null);
+        }
+      }
       schedule();
     }
 

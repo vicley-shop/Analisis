@@ -1,11 +1,12 @@
 window.AT_CONFIG = {
-  version: '2.3.0',
+  version: '2.4.0',
   base: 'https://biquote.io',
   signalrUrl: 'https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.0/signalr.min.js',
 
   symbols: {
     XAUUSD: { name: 'Oro / Dólar', digits: 2, contract: 100, spread: 0.30, family: 'metals', enabled: true },
     XAGUSD: { name: 'Plata / Dólar', digits: 3, contract: 5000, spread: 0.03, family: 'metals', enabled: true },
+    XAUEUR: { name: 'Oro / Euro', digits: 2, contract: 100, spread: 0.40, family: 'metals', enabled: true },
     EURUSD: { name: 'Euro / Dólar', digits: 5, contract: 100000, spread: 0.00010, family: 'forex', enabled: true },
     BNBUSD: { name: 'BNB / Dólar', digits: 2, contract: 1, spread: 0.30, family: 'crypto', enabled: true },
     BTCUSD: { name: 'Bitcoin / Dólar', digits: 2, contract: 1, spread: 0.60, family: 'crypto', enabled: true }
@@ -14,6 +15,7 @@ window.AT_CONFIG = {
   alias: {
     XAUUSD: 'XAUUSD',
     XAGUSD: 'XAGUSD',
+    XAUEUR: 'XAUEUR',
     EURUSD: 'EURUSD',
     BNBUSD: 'BNBUSD',
     BTCUSD: 'BTCUSD'
@@ -31,7 +33,8 @@ window.AT_CONFIG = {
     london: { startGmt: 8, endGmt: 16 },
     newYork: { startGmt: 13, endGmt: 21 },
     combined: { startGmt: 13, endGmt: 16 },
-    dstAdjust: false
+    dstAdjust: false,
+    requireActive: false
   },
 
   tradingHours: {
@@ -67,6 +70,7 @@ window.AT_CONFIG = {
     mssWindow: 15,
     sweepWindow: 5,
     sweepAtrMult: 0.25,
+    sweepMaxAtrMult: 2.5,
     obAtrMult: 1.5,
     obMaxZones: 3,
     fvgMaxZones: 3,

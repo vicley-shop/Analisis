@@ -42,7 +42,8 @@
 
   function cleanBars(bars) {
     if (!bars || !bars.length) return bars;
-    const useClosed = cfg().analysis && cfg().analysis.useClosedCandlesOnly !== false;
+    const analysisCfg = cfg().analysis || {};
+    const useClosed = analysisCfg.useClosedCandlesOnly !== false;
     if (useClosed && bars.length > 1) return bars.slice(0, -1);
     return bars;
   }
@@ -114,7 +115,8 @@
   }
 
   function analyzeTimeframe(bars) {
-    if (!bars || bars.length < 60) return null;
+    const minBars = (cfg().analysis && cfg().analysis.minBarsPerTf) || 60;
+    if (!bars || bars.length < minBars) return null;
     const closes = bars.map(function (b) { return b.c; });
     const highs = bars.map(function (b) { return b.h; });
     const lows = bars.map(function (b) { return b.l; });
@@ -209,10 +211,10 @@
 
     const divLb = exCfg.divergenceLookback || 15;
     const gap = exCfg.divergenceGap != null ? exCfg.divergenceGap : 1;
-    const minIdx = 2 * divLb + gap;
+    const minIdx = 2 * divLb + gap - 1;
     if (i >= minIdx) {
       const currLowStart = i - divLb + 1;
-      const prevLowEnd = currLowStart - gap;
+      const prevLowEnd = currLowStart - gap - 1;
       const prevLowStart = prevLowEnd - divLb + 1;
       let currLowIdx = -1, currLowVal = Infinity;
       let prevLowIdx = -1, prevLowVal = Infinity;
@@ -224,7 +226,7 @@
       }
 
       const currHighStart = i - divLb + 1;
-      const prevHighEnd = currHighStart - gap;
+      const prevHighEnd = currHighStart - gap - 1;
       const prevHighStart = prevHighEnd - divLb + 1;
       let currHighIdx = -1, currHighVal = -Infinity;
       let prevHighIdx = -1, prevHighVal = -Infinity;
@@ -267,14 +269,16 @@
       const atrStop = entry - stopMult * atr;
       stop = num(support) ? Math.min(support, atrStop) : atrStop;
       const atrTarget = entry + targetMult * atr;
-      target = num(resistance) ? Math.max(resistance, atrTarget) : atrTarget;
+      target = num(resistance) ? Math.min(resistance, atrTarget) : atrTarget;
+      if (target <= entry) return null;
       risk = entry - stop;
       reward = target - entry;
     } else if (direction === -1) {
       const atrStop = entry + stopMult * atr;
       stop = num(resistance) ? Math.max(resistance, atrStop) : atrStop;
       const atrTarget = entry - targetMult * atr;
-      target = num(support) ? Math.min(support, atrTarget) : atrTarget;
+      target = num(support) ? Math.max(support, atrTarget) : atrTarget;
+      if (target >= entry) return null;
       risk = stop - entry;
       reward = entry - target;
     } else {
@@ -286,7 +290,7 @@
     return { stop: stop, target: target, rr: rr, valid: rr >= minRR };
   }
 
-  function emptyResult(reason, sessionLabel) {
+  function emptyResult(reason, sessionLabel, marketOpen, symbolFamily) {
     return {
       consensusScore: 0,
       consensusLabel: 'neutral',
@@ -304,10 +308,10 @@
       verdictLabel: 'ESPERAR',
       verdictReason: reason || 'Datos insuficientes.',
       verdictRisk: null,
-      marketOpen: false,
+      marketOpen: marketOpen || false,
       highLiquidity: false,
       sessionLabel: sessionLabel || SESSION_LABELS.closed,
-      symbolFamily: 'unknown',
+      symbolFamily: symbolFamily || 'unknown',
       entryTf: null,
       conclusion: reason || 'Datos insuficientes. Se necesitan al menos dos temporalidades con historial suficiente.'
     };
@@ -345,7 +349,12 @@
     });
 
     if (valid.length < minValidTfs) {
-      return emptyResult('Datos insuficientes: se necesitan al menos ' + minValidTfs + ' temporalidades con historial suficiente.', sessionLabel);
+      return emptyResult(
+        'Datos insuficientes: se necesitan al menos ' + minValidTfs + ' temporalidades con historial suficiente.',
+        sessionLabel,
+        marketState.open,
+        marketState.family
+      );
     }
 
     let buyVotes = 0;
@@ -459,7 +468,8 @@
       alerts.push({ type: 'info', text: 'Mercado 24/7 pero fuera del overlap Londres-NY. Liquidez reducida y spread más ancho, especialmente en activos de menor capitalización como BNB.' });
     }
 
-    const currentPrice = valid[0].data.price;
+    const entryData = perTf[entryTf];
+    const currentPrice = entryData ? entryData.price : valid[0].data.price;
     const levels = findNearestLevels(entryBars, currentPrice, 3);
     const risk = overallDirection !== 0 ? suggestRisk(currentPrice, levels.support, levels.resistance, atrVal, overallDirection) : null;
 
@@ -473,7 +483,7 @@
     const hasDanger = alerts.some(function (a) { return a.type === 'danger'; });
 
     if (!marketState.open) {
-      verdictReason = 'Mercado cerrado (' + marketState.family + '). No se opera hasta la próxima apertura.';
+      verdictReason = 'Mercado cerrado (' + marketState.family + '). Sin operativa hasta la próxima apertura.';
     } else if (overallDirection === 0) {
       verdictReason = 'Temporalidades empatadas. Sin sesgo direccional claro.';
     } else if (consensusLabel === 'neutral') {
@@ -487,22 +497,26 @@
     } else if (!risk.valid) {
       verdictReason = 'R:R ' + risk.rr.toFixed(2) + ':1 por debajo del mínimo requerido (' + ((c.risk && c.risk.minRR) || 1.5) + ':1).';
     } else if (overallDirection === 1) {
-      const dist = atrVal > 0 ? (currentPrice - levels.support) / atrVal : Infinity;
-      if (dist <= 1.5) {
+      const distSupport = num(levels.support) && atrVal > 0
+        ? (currentPrice - levels.support) / atrVal
+        : Infinity;
+      if (distSupport <= 1.5) {
         verdictState = 'buy';
         verdictLabel = 'PREPARAR COMPRA';
         verdictReason = 'Sesgo alcista, precio cerca de soporte en ' + fmt(levels.support) + '. R:R ' + risk.rr.toFixed(2) + ':1.';
       } else {
-        verdictReason = 'Sesgo alcista, pero el precio está a ' + dist.toFixed(1) + '×ATR del soporte. Espera retroceso.';
+        verdictReason = 'Sesgo alcista, pero el precio está a ' + (isFinite(distSupport) ? distSupport.toFixed(1) + '×ATR' : 'distancia indefinida') + ' del soporte. Espera retroceso.';
       }
     } else if (overallDirection === -1) {
-      const dist = atrVal > 0 ? (levels.resistance - currentPrice) / atrVal : Infinity;
-      if (dist <= 1.5) {
+      const distResistance = num(levels.resistance) && atrVal > 0
+        ? (levels.resistance - currentPrice) / atrVal
+        : Infinity;
+      if (distResistance <= 1.5) {
         verdictState = 'sell';
         verdictLabel = 'PREPARAR VENTA';
         verdictReason = 'Sesgo bajista, precio cerca de resistencia en ' + fmt(levels.resistance) + '. R:R ' + risk.rr.toFixed(2) + ':1.';
       } else {
-        verdictReason = 'Sesgo bajista, pero el precio está a ' + dist.toFixed(1) + '×ATR de la resistencia. Espera rebote.';
+        verdictReason = 'Sesgo bajista, pero el precio está a ' + (isFinite(distResistance) ? distResistance.toFixed(1) + '×ATR' : 'distancia indefinida') + ' de la resistencia. Espera rebote.';
       }
     }
 
@@ -525,7 +539,7 @@
         conclusionParts.push('Fuerza en contra: ADX ' + avgAdxOpposed.toFixed(1) + '.');
       }
       if (macroMomentum !== '—') conclusionParts.push('Momentum en ' + entryTf.toUpperCase() + ': ' + macroMomentum + '.');
-      if (alerts.length > 0) conclusionParts.push('⚠️ ' + alerts.length + ' señal(es) detectada(s).');
+      if (alerts.length > 0) conclusionParts.push(alerts.length + ' señal(es) detectada(s).');
     }
 
     return {

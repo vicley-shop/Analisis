@@ -38,10 +38,11 @@
   function parseTs(x) {
     if (x == null) return null;
     if (typeof x === 'number' && Number.isFinite(x)) {
-      return x < 1e12 ? x * 1000 : x;
+      const t = x < 1e12 ? x * 1000 : x;
+      return t > 0 ? t : null;
     }
     const t = Date.parse(x);
-    return Number.isFinite(t) ? t : null;
+    return Number.isFinite(t) && t > 0 ? t : null;
   }
 
   function retryable(e) {
@@ -105,13 +106,16 @@
     if (t == null || o == null || h == null || l == null || c == null) return null;
     if (h < l) return null;
     if (o <= 0 || h <= 0 || l <= 0 || c <= 0) return null;
+    const v = toNum(raw.tickVolume);
+    const vb = toNum(raw.volume);
+    const vc = toNum(raw.vol);
     return {
       t: t,
       o: o,
       h: h,
       l: l,
       c: c,
-      v: toNum(raw.tickVolume) || 0,
+      v: v != null ? v : (vb != null ? vb : (vc != null ? vc : 0)),
       live: !!raw.isOpen
     };
   }
@@ -154,10 +158,10 @@
     const spreadRaw = toNum(raw.spread);
     return {
       symbol: internalName(raw.symbol),
-      bid: bid != null ? bid : mid,
-      ask: ask != null ? ask : mid,
+      bid: bid != null && bid > 0 ? bid : mid,
+      ask: ask != null && ask > 0 ? ask : mid,
       mid: mid,
-      spread: spreadRaw != null ? spreadRaw : (bid != null && ask != null ? ask - bid : 0),
+      spread: spreadRaw != null ? spreadRaw : (bid != null && ask != null ? Math.max(0, ask - bid) : 0),
       ts: ts != null ? ts : Date.now(),
       dayPct: toNum(raw.dayDiffPercent),
       high: toNum(raw.high),
@@ -220,6 +224,7 @@
       const timer = setTimeout(function () {
         const err = new Error('pool timeout ' + globalTimeoutMs + 'ms');
         err.timeout = true;
+        err.partial = results.slice();
         reject(err);
       }, globalTimeoutMs);
       run.then(
@@ -231,21 +236,24 @@
 
   function applyTick(bars, tfMs, price, ts, volume) {
     if (!bars || !bars.length) return null;
-    if (!Number.isFinite(price) || !Number.isFinite(ts) || !Number.isFinite(tfMs) || tfMs <= 0) return null;
+    if (!Number.isFinite(price) || price <= 0) return null;
+    if (!Number.isFinite(ts) || !Number.isFinite(tfMs) || tfMs <= 0) return null;
     const last = bars[bars.length - 1];
+    const vol = Number.isFinite(volume) && volume >= 0 ? volume : 1;
 
     if (ts >= last.t + tfMs) {
       last.live = false;
+      const newBarT = Math.floor(ts / tfMs) * tfMs;
       bars.push({
-        t: last.t + tfMs,
+        t: newBarT,
         o: price,
         h: price,
         l: price,
         c: price,
-        v: volume || 1,
+        v: vol,
         live: true
       });
-      return 'new';
+      return newBarT > last.t + tfMs ? 'gap' : 'new';
     }
 
     if (ts < last.t) return null;
@@ -254,7 +262,7 @@
     if (price > last.h) last.h = price;
     if (price < last.l) last.l = price;
     last.c = price;
-    last.v += volume || 1;
+    last.v += vol;
     return 'upd';
   }
 
@@ -315,7 +323,9 @@
     function startPolling(ms) {
       pollInterval = ms;
       if (pollTimer) clearInterval(pollTimer);
-      pollTimer = setInterval(function () { poll(); }, ms);
+      pollTimer = setInterval(function () {
+        poll().catch(function () { void 0; });
+      }, ms);
     }
 
     function drop(sym) {
@@ -385,6 +395,7 @@
         });
 
         const startP = conn.start();
+        startP.catch(function () { void 0; });
         const timeoutP = new Promise(function (_, reject) {
           setTimeout(function () { reject(new Error('SignalR timeout')); }, 5000);
         });
@@ -398,7 +409,7 @@
             startPolling(pollSlowMs);
             return true;
           }, function () {
-            try { conn.stop(); } catch (e) {}
+            try { conn.stop(); } catch (e) { void 0; }
             conn = null;
             return false;
           });
@@ -413,7 +424,7 @@
         stopped = false;
         setMode('polling');
         if (!pollTimer) startPolling(pollMs);
-        poll();
+        poll().catch(function () { void 0; });
         const client = handlers.loadClient
           ? handlers.loadClient().catch(function () { return false; })
           : Promise.resolve(true);
@@ -426,7 +437,7 @@
       stop: function () {
         stopped = true;
         if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
-        if (conn) { try { conn.stop(); } catch (e) {} conn = null; }
+        if (conn) { try { conn.stop(); } catch (e) { void 0; } conn = null; }
         setMode('off');
       },
       mode: function () { return mode; },
@@ -435,7 +446,7 @@
       reconnect: function () {
         stopped = true;
         if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
-        if (conn) { try { conn.stop(); } catch (e) {} conn = null; }
+        if (conn) { try { conn.stop(); } catch (e) { void 0; } conn = null; }
         backoffUntil = 0;
         pollInFlight = false;
         this.start();
