@@ -4,9 +4,9 @@ window.AT.smc = window.AT.smc || {};
 window.AT.smc.liquidity = (function () {
   'use strict';
 
-  const DEFAULT_SWEEP_ATR_MULT = 0.25;
+  const DEFAULT_SWEEP_MIN_ATR_MULT = 0.25;
+  const DEFAULT_SWEEP_MAX_ATR_MULT = 2.5;
   const DEFAULT_SWEEP_WINDOW = 5;
-  const DEFAULT_MIN_PENETRATION_ATR = 0.30;
   const DEFAULT_EQ_TOLERANCE_ATR_MULT = 0.10;
   const DEFAULT_LOOKBACK_PIVOTS = 5;
 
@@ -14,8 +14,12 @@ window.AT.smc.liquidity = (function () {
     return (window.AT_CONFIG && window.AT_CONFIG.smc) || {};
   }
 
-  function sweepMult() {
-    return cfg().sweepAtrMult != null ? cfg().sweepAtrMult : DEFAULT_SWEEP_ATR_MULT;
+  function sweepMinMult() {
+    return cfg().sweepAtrMult != null ? cfg().sweepAtrMult : DEFAULT_SWEEP_MIN_ATR_MULT;
+  }
+
+  function sweepMaxMult() {
+    return cfg().sweepMaxAtrMult != null ? cfg().sweepMaxAtrMult : DEFAULT_SWEEP_MAX_ATR_MULT;
   }
 
   function sweepWindowDefault() {
@@ -46,8 +50,8 @@ window.AT.smc.liquidity = (function () {
   }
 
   function detectBullishSweep(bars, pivot, atr, opts) {
-    const maxPenetration = atr * sweepMult();
-    const minPenetration = atr * (opts.minPenetration != null ? opts.minPenetration : DEFAULT_MIN_PENETRATION_ATR);
+    const minPenetration = atr * (opts.minPenetration != null ? opts.minPenetration : sweepMinMult());
+    const maxPenetration = atr * (opts.maxPenetration != null ? opts.maxPenetration : sweepMaxMult());
     const window = opts.window != null ? opts.window : sweepWindowDefault();
     const lastIdx = bars.length - 1;
     const startIdx = Math.max(pivot.index + 1, lastIdx - window + 1);
@@ -75,8 +79,8 @@ window.AT.smc.liquidity = (function () {
   }
 
   function detectBearishSweep(bars, pivot, atr, opts) {
-    const maxPenetration = atr * sweepMult();
-    const minPenetration = atr * (opts.minPenetration != null ? opts.minPenetration : DEFAULT_MIN_PENETRATION_ATR);
+    const minPenetration = atr * (opts.minPenetration != null ? opts.minPenetration : sweepMinMult());
+    const maxPenetration = atr * (opts.maxPenetration != null ? opts.maxPenetration : sweepMaxMult());
     const window = opts.window != null ? opts.window : sweepWindowDefault();
     const lastIdx = bars.length - 1;
     const startIdx = Math.max(pivot.index + 1, lastIdx - window + 1);
@@ -182,6 +186,8 @@ window.AT.smc.liquidity = (function () {
 
   return {
     detectSweeps: detectSweeps,
-    findEqualLevels: findEqualLevels
+    findEqualLevels: findEqualLevels,
+    sweepMinMult: sweepMinMult,
+    sweepMaxMult: sweepMaxMult
   };
 })();

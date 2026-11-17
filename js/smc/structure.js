@@ -45,8 +45,8 @@ window.AT.smc.structure = (function () {
       const b = bars[i];
       let isHigh = true;
       let isLow = true;
-      let highStrength = 0;
-      let lowStrength = 0;
+      let maxNearHigh = -Infinity;
+      let minNearLow = Infinity;
 
       for (let j = 1; j <= L; j++) {
         const left = bars[i - j];
@@ -54,16 +54,28 @@ window.AT.smc.structure = (function () {
 
         if (isHigh) {
           if (left.h > b.h + tol || right.h > b.h + tol) isHigh = false;
-          else if (left.h <= b.h + tol && right.h <= b.h + tol) highStrength++;
         }
         if (isLow) {
           if (left.l < b.l - tol || right.l < b.l - tol) isLow = false;
-          else if (left.l >= b.l - tol && right.l >= b.l - tol) lowStrength++;
         }
+
+        if (left.h > maxNearHigh) maxNearHigh = left.h;
+        if (right.h > maxNearHigh) maxNearHigh = right.h;
+        if (left.l < minNearLow) minNearLow = left.l;
+        if (right.l < minNearLow) minNearLow = right.l;
       }
 
-      if (isHigh) highs.push({ index: i, price: b.h, strength: highStrength });
-      if (isLow) lows.push({ index: i, price: b.l, strength: lowStrength });
+      if (isHigh) {
+        const prom = b.h - maxNearHigh;
+        const strength = tol > 0 ? Math.max(0, Math.min(1, prom / (tol * 2))) : 1;
+        highs.push({ index: i, price: b.h, strength: strength });
+      }
+
+      if (isLow) {
+        const prom = minNearLow - b.l;
+        const strength = tol > 0 ? Math.max(0, Math.min(1, prom / (tol * 2))) : 1;
+        lows.push({ index: i, price: b.l, strength: strength });
+      }
     }
 
     return { highs: highs, lows: lows };
@@ -119,7 +131,8 @@ window.AT.smc.structure = (function () {
         index: bullishPivot.index,
         barsSince: lastBarIndex - bullishPivot.index,
         type: isMSS ? 'MSS_Bullish' : 'BOS_Bullish',
-        fresh: (lastBarIndex - bullishPivot.index) <= window
+        fresh: (lastBarIndex - bullishPivot.index) <= window,
+        strength: bullishPivot.strength
       };
     }
 
@@ -132,7 +145,8 @@ window.AT.smc.structure = (function () {
         index: bearishPivot.index,
         barsSince: lastBarIndex - bearishPivot.index,
         type: isMSS ? 'MSS_Bearish' : 'BOS_Bearish',
-        fresh: (lastBarIndex - bearishPivot.index) <= window
+        fresh: (lastBarIndex - bearishPivot.index) <= window,
+        strength: bearishPivot.strength
       };
     }
 

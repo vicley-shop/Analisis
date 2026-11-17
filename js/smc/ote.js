@@ -70,6 +70,68 @@ window.AT.smc.ote = (function () {
     return best;
   }
 
+  function findSwing(bars, pivots, direction, atr, opts) {
+    opts = opts || {};
+    if (!bars || bars.length < 10) return null;
+    if (!pivots || !pivots.highs || !pivots.highs.length) return null;
+    if (!pivots.lows || !pivots.lows.length) return null;
+    if (direction !== 1 && direction !== -1) return null;
+
+    const atrVal = resolveAtr(atr);
+    if (!(atrVal > 0)) return null;
+
+    const lastIdx = bars.length - 1;
+    const recency = opts.swingRecency != null ? opts.swingRecency : swingRecency();
+    const minMult = opts.minSwingAtrMult != null ? opts.minSwingAtrMult : minSwingAtrMult();
+    const maxAge = opts.maxSwingAge != null ? opts.maxSwingAge : maxSwingAge();
+
+    const recentStart = Math.max(0, lastIdx - recency);
+
+    if (direction === 1) {
+      const swingEnd = findExtremeHigh(pivots, recentStart, lastIdx);
+      if (!swingEnd) return null;
+      const ageBars = lastIdx - swingEnd.index;
+      if (ageBars > recency) return null;
+
+      const lowSearchStart = Math.max(0, swingEnd.index - maxAge);
+      const swingStart = findExtremeLow(pivots, lowSearchStart, swingEnd.index - 1);
+      if (!swingStart) return null;
+
+      const swingSize = swingEnd.price - swingStart.price;
+      if (swingSize < minMult * atrVal) return null;
+
+      return {
+        direction: 1,
+        swingStart: swingStart,
+        swingEnd: swingEnd,
+        swingSize: swingSize,
+        swingSizeAtr: swingSize / atrVal,
+        ageBars: ageBars
+      };
+    }
+
+    const swingEnd = findExtremeLow(pivots, recentStart, lastIdx);
+    if (!swingEnd) return null;
+    const ageBars = lastIdx - swingEnd.index;
+    if (ageBars > recency) return null;
+
+    const highSearchStart = Math.max(0, swingEnd.index - maxAge);
+    const swingStart = findExtremeHigh(pivots, highSearchStart, swingEnd.index - 1);
+    if (!swingStart) return null;
+
+    const swingSize = swingStart.price - swingEnd.price;
+    if (swingSize < minMult * atrVal) return null;
+
+    return {
+      direction: -1,
+      swingStart: swingStart,
+      swingEnd: swingEnd,
+      swingSize: swingSize,
+      swingSizeAtr: swingSize / atrVal,
+      ageBars: ageBars
+    };
+  }
+
   function stateFor(direction, currentPrice, swingStart, top, bottom) {
     if (direction === 1) {
       if (currentPrice < swingStart) return 'failed';
@@ -126,75 +188,25 @@ window.AT.smc.ote = (function () {
   }
 
   function calculateOTE(bars, pivots, direction, atr, opts) {
-    opts = opts || {};
-    if (!bars || bars.length < 10) return null;
-    if (!pivots || !pivots.highs || !pivots.highs.length) return null;
-    if (!pivots.lows || !pivots.lows.length) return null;
-    if (direction !== 1 && direction !== -1) return null;
+    const swing = findSwing(bars, pivots, direction, atr, opts);
+    if (!swing) return null;
 
-    const atrVal = resolveAtr(atr);
-    if (!(atrVal > 0)) return null;
-
-    const lastIdx = bars.length - 1;
-    const recency = opts.swingRecency != null ? opts.swingRecency : swingRecency();
-    const minMult = opts.minSwingAtrMult != null ? opts.minSwingAtrMult : minSwingAtrMult();
-    const maxAge = opts.maxSwingAge != null ? opts.maxSwingAge : maxSwingAge();
-    const currentPrice = bars[lastIdx].c;
-
-    const recentStart = Math.max(0, lastIdx - recency);
-
-    if (direction === 1) {
-      const swingEnd = findExtremeHigh(pivots, recentStart, lastIdx);
-      if (!swingEnd) return null;
-      const ageBars = lastIdx - swingEnd.index;
-      if (ageBars > recency) return null;
-
-      const lowSearchStart = Math.max(0, swingEnd.index - maxAge);
-      const swingStart = findExtremeLow(pivots, lowSearchStart, swingEnd.index - 1);
-      if (!swingStart) return null;
-
-      const swingSize = swingEnd.price - swingStart.price;
-      if (swingSize < minMult * atrVal) return null;
-      const swingSizeAtr = swingSize / atrVal;
-
-      return buildOTE(
-        swingStart.price,
-        swingEnd.price,
-        1,
-        swingStart.index,
-        swingEnd.index,
-        ageBars,
-        swingSizeAtr,
-        currentPrice
-      );
-    }
-
-    const swingEnd = findExtremeLow(pivots, recentStart, lastIdx);
-    if (!swingEnd) return null;
-    const ageBars = lastIdx - swingEnd.index;
-    if (ageBars > recency) return null;
-
-    const highSearchStart = Math.max(0, swingEnd.index - maxAge);
-    const swingStart = findExtremeHigh(pivots, highSearchStart, swingEnd.index - 1);
-    if (!swingStart) return null;
-
-    const swingSize = swingStart.price - swingEnd.price;
-    if (swingSize < minMult * atrVal) return null;
-    const swingSizeAtr = swingSize / atrVal;
+    const currentPrice = bars[bars.length - 1].c;
 
     return buildOTE(
-      swingStart.price,
-      swingEnd.price,
-      -1,
-      swingStart.index,
-      swingEnd.index,
-      ageBars,
-      swingSizeAtr,
+      swing.swingStart.price,
+      swing.swingEnd.price,
+      swing.direction,
+      swing.swingStart.index,
+      swing.swingEnd.index,
+      swing.ageBars,
+      swing.swingSizeAtr,
       currentPrice
     );
   }
 
   return {
-    calculateOTE: calculateOTE
+    calculateOTE: calculateOTE,
+    findSwing: findSwing
   };
 })();

@@ -227,10 +227,12 @@ window.AT.smc.zones = (function () {
     return result.slice(0, max);
   }
 
-  function findActiveZone(zones, price) {
+  function findActiveZone(zones, price, direction) {
     if (!zones || !zones.length) return null;
+    const filterDir = direction === 1 || direction === -1;
     for (let i = 0; i < zones.length; i++) {
       const z = zones[i];
+      if (filterDir && z.direction !== direction) continue;
       if (price >= z.bottom && price <= z.top) return z;
     }
     return null;
