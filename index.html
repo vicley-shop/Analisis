@@ -4,214 +4,201 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="dark">
-  <meta name="theme-color" content="#0B0E13">
-  <meta name="description" content="Market Consensus PRO — Análisis técnico multi-temporal, confluencia SMC y gestión de riesgo institucional.">
-  <meta name="format-detection" content="telephone=no">
-  <meta name="referrer" content="strict-origin-when-cross-origin">
-  <title>Market Consensus PRO</title>
+  <meta name="theme-color" content="#080B10">
+  <title>Quantum Desk PRO — Terminal Institucional &amp; SMC</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
-  <style>
-    .skip-link{position:absolute;top:-100px;left:10px;z-index:9999;padding:12px 18px;background:#4F8CFF;color:#0B0E13;border-radius:8px;font-weight:700;font-size:14px;text-decoration:none;}
-    .skip-link:focus{top:10px;}
-    button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,a:focus-visible{outline:2px solid #4F8CFF;outline-offset:3px;}
-    [hidden]{display:none!important;}
-  </style>
 </head>
 <body>
 
-<a class="skip-link" href="#mainContent">Saltar al contenido principal</a>
-
-<noscript>
-  <div style="padding:48px 24px;text-align:center;color:#F1F5F9;background:#0B0E13;min-height:100vh;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:16px;">
-    <h1 style="margin:0;font-size:22px;font-weight:700;">Market Consensus PRO</h1>
-    <p style="margin:0;max-width:480px;font-size:14px;color:#94A3B8;">Este panel requiere JavaScript habilitado para cargar datos de mercado, calcular el consenso multi-temporal y renderizar el gráfico.</p>
-  </div>
-</noscript>
-
-<header class="top">
-  <div class="top-inner">
-    <div class="brand" aria-label="Market Consensus PRO">
-      <span class="brand-mark" aria-hidden="true">M</span>
-      <span class="brand-text">
-        <strong>Market Consensus</strong>
-        <span class="brand-pro">PRO</span>
-      </span>
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand">
+      <div class="brand-logo">Q</div>
+      <div class="brand-info">
+        <span class="brand-title">QUANTUM DESK</span>
+        <span class="brand-tag">INSTITUTIONAL</span>
+      </div>
     </div>
-    <nav class="symbols" id="symbolBar" role="toolbar" aria-label="Seleccionar mercado"></nav>
-    <div class="status" role="status">
-      <span class="dot" id="statusDot"></span>
-      <span id="statusText">Conectando…</span>
+
+    <nav class="ticker-strip" id="symbolBar" aria-label="Instrumentos"></nav>
+
+    <div class="topbar-actions">
+      <button type="button" id="soundToggle" class="btn-icon active" title="Alertas sonoras activadas" aria-pressed="true">🔔</button>
+      <div class="conn-pill" role="status">
+        <span class="conn-dot" id="statusDot"></span>
+        <span id="statusText">Iniciando…</span>
+      </div>
     </div>
   </div>
 </header>
 
-<main id="mainContent" class="dashboard">
+<div id="signalBanner" class="signal-banner" hidden role="alert" aria-live="assertive">
+  <div class="signal-banner-inner">
+    <span class="signal-pulse"></span>
+    <strong id="signalBannerTitle">SEÑAL DETECTADA</strong>
+    <span id="signalBannerDetail"></span>
+    <button type="button" id="signalBannerClose" class="btn-close" aria-label="Cerrar alerta">✕</button>
+  </div>
+</div>
 
-  <section class="price-card card" aria-labelledby="price-label">
-    <header class="card-head">
-      <span class="card-label" id="price-label">Precio</span>
-      <span id="sessionBadge" class="session-badge neutral">—</span>
-    </header>
-    <div id="priceBig" class="price-big">—</div>
-    <div class="price-meta">
-      <span id="priceChg" class="price-chg"></span>
-      <span id="priceSub" class="price-sub"></span>
+<main class="workspace">
+
+  <!-- Fila 1: Precio + Veredicto + Medidor -->
+  <section class="panel panel-price">
+    <div class="panel-head">
+      <span class="panel-title">COTIZACIÓN EN VIVO</span>
+      <span id="sessionBadge" class="badge neutral">—</span>
+    </div>
+    <div class="price-main" id="priceBig">—</div>
+    <div class="price-footer">
+      <span id="priceChg" class="price-chg">—</span>
+      <span id="priceSub" class="price-sub">Esperando feed…</span>
     </div>
   </section>
 
-  <section class="verdict-card card" id="verdictCard" aria-labelledby="verdict-label">
-    <header class="card-head">
-      <span class="card-label" id="verdict-label">Veredicto de operación</span>
-    </header>
-    <div class="verdict-content" role="status" aria-live="polite">
-      <div id="verdictBadge" class="verdict-badge wait">
-        <span class="verdict-icon" aria-hidden="true">◷</span>
-        <span class="verdict-text">ESPERAR</span>
+  <section class="panel panel-verdict" id="verdictCard">
+    <div class="panel-head">
+      <span class="panel-title">MOTOR DE EJECUCIÓN Y ENTRADA</span>
+      <span id="verdictConfidence" class="mono-tag">Confianza: 0%</span>
+    </div>
+    <div class="verdict-body">
+      <div id="verdictBadge" class="signal-pill wait">
+        <span class="signal-icon">◷</span>
+        <span class="signal-label">ESPERANDO SETUP</span>
       </div>
-      <p id="verdictReason" class="verdict-reason">Analizando condiciones de mercado...</p>
+      <div class="verdict-details">
+        <p id="verdictReason" class="verdict-reason">Analizando estructura y confluencia multi-temporal...</p>
+        <div id="tradeLevels" class="trade-levels" hidden>
+          <div class="level-box"><span>ENTRADA</span><strong id="lvlEntry">—</strong></div>
+          <div class="level-box stop"><span>STOP LOSS</span><strong id="lvlStop">—</strong></div>
+          <div class="level-box target"><span>TAKE PROFIT</span><strong id="lvlTarget">—</strong></div>
+          <div class="level-box rr"><span>RIESGO / BEN.</span><strong id="lvlRR">—</strong></div>
+        </div>
+      </div>
     </div>
   </section>
 
-  <section class="gauge-card card" aria-labelledby="gauge-label-title">
-    <header class="card-head">
-      <span class="card-label" id="gauge-label-title">Consenso multi-temporal</span>
-    </header>
-    <svg id="gaugeSvg" viewBox="0 0 200 112" role="img" aria-label="Medidor de consenso entre temporalidades">
-      <path class="g g1" d="M 20 100 A 80 80 0 0 1 35.28 52.98"/>
-      <path class="g g2" d="M 35.28 52.98 A 80 80 0 0 1 75.28 23.92"/>
-      <path class="g g3" d="M 75.28 23.92 A 80 80 0 0 1 124.72 23.92"/>
-      <path class="g g4" d="M 124.72 23.92 A 80 80 0 0 1 164.72 52.98"/>
-      <path class="g g5" d="M 164.72 52.98 A 80 80 0 0 1 180 100"/>
+  <section class="panel panel-gauge">
+    <div class="panel-head">
+      <span class="panel-title">CONSENSO MTF</span>
+      <span id="gaugeScore" class="mono-tag">0%</span>
+    </div>
+    <svg class="gauge-svg" viewBox="0 0 200 110" aria-hidden="true">
+      <path class="arc arc-1" d="M 20 100 A 80 80 0 0 1 35.28 52.98"/>
+      <path class="arc arc-2" d="M 35.28 52.98 A 80 80 0 0 1 75.28 23.92"/>
+      <path class="arc arc-3" d="M 75.28 23.92 A 80 80 0 0 1 124.72 23.92"/>
+      <path class="arc arc-4" d="M 124.72 23.92 A 80 80 0 0 1 164.72 52.98"/>
+      <path class="arc arc-5" d="M 164.72 52.98 A 80 80 0 0 1 180 100"/>
       <g id="needle" transform="rotate(0 100 100)">
-        <line x1="100" y1="100" x2="100" y2="34" class="needle-line"/>
+        <line x1="100" y1="100" x2="100" y2="30" class="needle-line"/>
         <circle cx="100" cy="100" r="5" class="needle-hub"/>
       </g>
     </svg>
-    <div id="gaugeLabel" class="gauge-label neutral" aria-live="polite">—</div>
-    <div id="gaugeScore" class="gauge-score" aria-live="polite"></div>
+    <div id="gaugeLabel" class="gauge-text neutral">NEUTRO</div>
   </section>
 
-  <section class="smc-card card" id="smcCard" aria-labelledby="smc-label">
-    <header class="card-head">
-      <span class="card-label" id="smc-label">Análisis institucional (SMC)</span>
-      <strong id="smcScore" class="smc-score" aria-live="polite">0%</strong>
-    </header>
-    <div class="smc-bar-bg" aria-hidden="true">
-      <div id="smcBarFill" class="smc-bar-fill" style="width:0%"></div>
+  <!-- Fila 2: Métricas Cuantitativas -->
+  <section class="kpi-strip">
+    <div class="kpi-card">
+      <span class="kpi-label">TENDENCIA (ADX)</span>
+      <strong id="macroTrend" class="kpi-value">—</strong>
     </div>
-    <ul id="smcReasons" class="smc-reasons">
-      <li class="muted">Esperando datos...</li>
+    <div class="kpi-card">
+      <span class="kpi-label">MOMENTUM (RSI / ROC)</span>
+      <strong id="macroMomentum" class="kpi-value">—</strong>
+    </div>
+    <div class="kpi-card">
+      <span class="kpi-label">VOLATILIDAD (ATR)</span>
+      <strong id="macroVolatility" class="kpi-value">—</strong>
+    </div>
+    <div class="kpi-card">
+      <span class="kpi-label">ESTRUCTURA GLOBAL</span>
+      <strong id="macroStructure" class="kpi-value">—</strong>
+    </div>
+  </section>
+
+  <!-- Fila 3: Gráfico Principal -->
+  <section class="panel panel-chart" id="chartCard">
+    <div class="chart-toolbar">
+      <div class="tf-selector" id="mtf" role="tablist" aria-label="Temporalidades"></div>
+      <div id="legend" class="ohlc-legend">Pase el cursor sobre el gráfico</div>
+      <div class="chart-controls">
+        <button type="button" id="zoomOut" title="Alejar">−</button>
+        <button type="button" id="zoomIn" title="Acercar">+</button>
+        <button type="button" id="zoomReset" title="Restaurar vista">⟲</button>
+        <button type="button" id="drawToggle" title="Herramientas de dibujo">✏️</button>
+        <button type="button" id="chartFullscreen" title="Pantalla completa">⛶</button>
+      </div>
+    </div>
+
+    <div class="drawing-popover" id="drawingMenu" hidden>
+      <button type="button" class="draw-item active" data-tool="cursor">↖ Cursor</button>
+      <button type="button" class="draw-item" data-tool="line">╱ Línea Tendencia</button>
+      <button type="button" class="draw-item" data-tool="h">─ Nivel Horizontal</button>
+      <button type="button" class="draw-item" data-tool="rect">▭ Zona / Caja</button>
+      <button type="button" class="draw-item" data-tool="fib">π Fibonacci</button>
+      <hr>
+      <button type="button" class="draw-item" id="drawUndo">↶ Deshacer</button>
+      <button type="button" class="draw-item danger" id="drawClear">🗑 Limpiar Todo</button>
+    </div>
+
+    <canvas id="chart"></canvas>
+
+    <div class="chart-footer">
+      <div class="ema-keys">
+        <span><i class="dot-ema e20"></i>EMA 20</span>
+        <span><i class="dot-ema e50"></i>EMA 50</span>
+        <span><i class="dot-ema e200"></i>EMA 200</span>
+      </div>
+      <div class="zone-keys">
+        <span><i class="box-zone ob"></i>Order Block</span>
+        <span><i class="box-zone fvg"></i>Fair Value Gap</span>
+        <span><i class="box-zone ote"></i>Zona OTE</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Fila 4: SMC + Historial de Señales -->
+  <section class="panel panel-smc">
+    <div class="panel-head">
+      <span class="panel-title">CONFLUENCIA INSTITUCIONAL (SMC)</span>
+      <strong id="smcScore" class="smc-pct">0%</strong>
+    </div>
+    <div class="progress-track">
+      <div id="smcBarFill" class="progress-fill" style="width:0%"></div>
+    </div>
+    <ul id="smcReasons" class="smc-list">
+      <li class="muted">Esperando cálculo institucional…</li>
     </ul>
   </section>
 
-  <div class="metrics-grid" role="group" aria-label="Métricas macro">
-    <div class="card metric-card">
-      <span class="card-label">Tendencia</span>
-      <strong id="macroTrend" class="metric-val" aria-live="polite">—</strong>
+  <section class="panel panel-log">
+    <div class="panel-head">
+      <span class="panel-title">BITÁCORA DE SEÑALES EN VIVO</span>
+      <span id="signalCount" class="mono-tag">0 señales</span>
     </div>
-    <div class="card metric-card">
-      <span class="card-label">Momentum</span>
-      <strong id="macroMomentum" class="metric-val" aria-live="polite">—</strong>
+    <div class="log-container">
+      <ul id="signalHistory" class="signal-history">
+        <li class="muted">Sin señales emitidas en esta sesión.</li>
+      </ul>
     </div>
-    <div class="card metric-card">
-      <span class="card-label">Volatilidad</span>
-      <strong id="macroVolatility" class="metric-val" aria-live="polite">—</strong>
-    </div>
-    <div class="card metric-card">
-      <span class="card-label">Estructura</span>
-      <strong id="macroStructure" class="metric-val" aria-live="polite">—</strong>
-    </div>
-  </div>
-
-  <section class="card chart-card" id="chartCard" aria-labelledby="chart-label">
-    <header class="chart-head">
-      <span class="card-label" id="chart-label">Gráfico</span>
-      <div id="legend" class="legend muted small" aria-live="polite">&nbsp;</div>
-      <div class="chart-tools">
-        <button type="button" id="chartFullscreen" aria-label="Pantalla completa" title="Pantalla completa">⛶</button>
-        <button type="button" id="zoomOut" aria-label="Alejar" title="Alejar">−</button>
-        <button type="button" id="zoomIn" aria-label="Acercar" title="Acercar">+</button>
-        <button type="button" id="zoomReset" aria-label="Centrar" title="Centrar">⟲</button>
-        <button type="button" id="drawToggle" class="draw-toggle" aria-label="Herramientas de dibujo" aria-haspopup="menu" aria-expanded="false" title="Dibujar (solo en pantalla completa)" hidden>✏️</button>
-      </div>
-    </header>
-    <div class="drawing-menu" id="drawingMenu" role="menu" aria-label="Herramientas de dibujo" hidden>
-      <button type="button" class="tool-btn active" data-tool="cursor" role="menuitemradio" aria-checked="true">
-        <span class="tool-icon">↖</span><span>Seleccionar / Pan</span>
-      </button>
-      <div class="drawing-sep" role="separator"></div>
-      <button type="button" class="tool-btn" data-tool="line" role="menuitemradio" aria-checked="false">
-        <span class="tool-icon">╱</span><span>Línea de tendencia</span>
-      </button>
-      <button type="button" class="tool-btn" data-tool="h" role="menuitemradio" aria-checked="false">
-        <span class="tool-icon">─</span><span>Línea horizontal</span>
-      </button>
-      <button type="button" class="tool-btn" data-tool="v" role="menuitemradio" aria-checked="false">
-        <span class="tool-icon">│</span><span>Línea vertical</span>
-      </button>
-      <button type="button" class="tool-btn" data-tool="rect" role="menuitemradio" aria-checked="false">
-        <span class="tool-icon">▭</span><span>Rectángulo</span>
-      </button>
-      <button type="button" class="tool-btn" data-tool="fib" role="menuitemradio" aria-checked="false">
-        <span class="tool-icon">π</span><span>Fibonacci</span>
-      </button>
-      <div class="drawing-sep" role="separator"></div>
-      <button type="button" class="tool-btn" id="drawUndo" role="menuitem">
-        <span class="tool-icon">↶</span><span>Deshacer último</span>
-      </button>
-      <button type="button" class="tool-btn danger" id="drawClear" role="menuitem">
-        <span class="tool-icon">🗑</span><span>Borrar todo</span>
-      </button>
-    </div>
-    <canvas id="chart" role="img" tabindex="0" aria-label="Gráfico de velas japonesas con EMA 20, 50 y 200, y zonas de Order Blocks, Fair Value Gaps y OTE"></canvas>
-    <div class="legend-ema muted small">
-      <span class="k e1"></span> EMA 20
-      <span class="k e2"></span> EMA 50
-      <span class="k e3"></span> EMA 200
-    </div>
-  </section>
-
-  <section class="card mtf-card" id="mtfCard" aria-labelledby="mtf-label">
-    <header class="mtf-head">
-      <span class="card-label" id="mtf-label">Lectura por temporalidad</span>
-      <button type="button" id="mtfToggle" class="mtf-toggle" aria-label="Mostrar más temporalidades" aria-expanded="false" aria-controls="mtf">
-        <span class="mtf-toggle-icon" aria-hidden="true">›</span>
-      </button>
-    </header>
-    <div class="mtf" id="mtf" role="tablist" aria-label="Lectura por temporalidad"></div>
-  </section>
-
-  <section class="card conclusion-card" id="conclusionCard" aria-labelledby="conclusion-label">
-    <span class="card-label" id="conclusion-label">Conclusión del análisis</span>
-    <p id="conclusionText" class="conclusion-text" aria-live="polite">Esperando datos suficientes para generar un veredicto...</p>
-  </section>
-
-  <section class="card alert-card" id="alertCard" hidden aria-labelledby="alert-label">
-    <span class="card-label warn" id="alert-label">Alertas de agotamiento</span>
-    <ul id="alertList" class="alert-list" aria-live="polite"></ul>
   </section>
 
 </main>
 
-<footer class="foot">
-  <p>Market Consensus PRO · Análisis técnico institucional</p>
-  <p>Fines educativos. No constituye asesoramiento financiero.</p>
-</footer>
-
 <script defer src="js/config.js"></script>
 <script defer src="js/indicators.js"></script>
 <script defer src="js/data.js"></script>
-<script defer src="js/analysis.js"></script>
 <script defer src="js/smc/structure.js"></script>
 <script defer src="js/smc/liquidity.js"></script>
 <script defer src="js/smc/zones.js"></script>
 <script defer src="js/smc/ote.js"></script>
 <script defer src="js/smc-engine.js"></script>
+<script defer src="js/analysis.js"></script>
 <script defer src="js/chart.js"></script>
 <script defer src="js/app.js"></script>
-
 </body>
 </html>
