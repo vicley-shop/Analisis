@@ -1,5 +1,5 @@
 window.AT_CONFIG = {
-  version: '3.0.0',
+  version: '3.1.0',
   base: 'https://biquote.io',
   signalrUrl: 'https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.0/signalr.min.js',
 
@@ -10,15 +10,6 @@ window.AT_CONFIG = {
     EURUSD: { name: 'Euro / Dólar', digits: 5, contract: 100000, spread: 0.00010, family: 'forex', enabled: true },
     BNBUSD: { name: 'BNB / Dólar', digits: 2, contract: 1, spread: 0.30, family: 'crypto', enabled: true },
     BTCUSD: { name: 'Bitcoin / Dólar', digits: 2, contract: 1, spread: 0.60, family: 'crypto', enabled: true }
-  },
-
-  alias: {
-    XAUUSD: 'XAUUSD',
-    XAGUSD: 'XAGUSD',
-    XAUEUR: 'XAUEUR',
-    EURUSD: 'EURUSD',
-    BNBUSD: 'BNBUSD',
-    BTCUSD: 'BTCUSD'
   },
 
   timeframes: {
@@ -74,6 +65,11 @@ window.AT_CONFIG = {
     atrPeriod: 14,
     pivotLookback: 5,
     mssWindow: 15,
+    mssDisplacementBodyRatio: 0.55,
+    mssDisplacementAtrMult: 1.0,
+    displacementEnabled: false,
+    zigzagAtrMult: 1.8,
+    zigzagEnabled: true,
     sweepWindow: 5,
     sweepAtrMult: 0.35,
     sweepMaxAtrMult: 1.8,
@@ -81,9 +77,11 @@ window.AT_CONFIG = {
     obAtrMult: 1.8,
     obMaxZones: 3,
     obMaxAgeBars: 150,
+    obMitigationCloseOnly: true,
     fvgMaxZones: 3,
     fvgMinAtrMult: 0.30,
     fvgMaxAge: 60,
+    fvgMitigationCloseOnly: true,
     eqToleranceAtrMult: 0.10,
     oteMin: 0.618,
     oteMax: 0.79,
@@ -91,11 +89,32 @@ window.AT_CONFIG = {
     oteSwingRecency: 25,
     minSwingAtrMult: 4,
     maxSwingAge: 200,
+    swingBodyRatioMin: 0.5,
+    requireBosForOte: false,
+    requirePremiumDiscount: false,
     weights: { mss: 30, sweep: 25, fvg: 15, ob: 15, ote: 15 },
+    bosWeightFactor: 0.5,
+    staleMssFactor: 0.5,
+    sweepAgainstPenalty: 15,
+    htfBiasBonus: 10,
+    htfBiasPenalty: 10,
     requireZoneForHigh: true,
     highConfluence: 80,
     mediumConfluence: 50,
-    minComponentsForMedium: 2
+    minComponentsForMedium: 2,
+    minConfidence: 15,
+    riskTiers: {
+      high: 1.0,
+      medium: 0.5,
+      low: 0.25,
+      vetoed: 0.0
+    },
+    blockers: {
+      enabled: false,
+      strict: false,
+      lowVolumeHours: [],
+      newsWindows: []
+    }
   },
 
   sessions: {
@@ -121,7 +140,8 @@ window.AT_CONFIG = {
     retryMs: 60000,
     backoffMs: 10000,
     maxConcurrent: 3,
-    staleThresholdMs: 15000
+    staleThresholdMs: 15000,
+    maxRetries: 3
   },
 
   chart: {
@@ -130,25 +150,26 @@ window.AT_CONFIG = {
     maxCount: 1000,
     emaPeriods: [20, 50, 200],
     colors: {
-      ema20: '#f59e0b',
-      ema50: '#00b8d9',
-      ema200: '#a855f7',
-      up: '#10b981',
-      down: '#f43f5e',
-      grid: 'rgba(255, 255, 255, 0.06)',
-      zoneOB: 'rgba(16, 185, 129, 0.15)',
-      zoneFVG: 'rgba(0, 184, 217, 0.15)',
-      zoneOTE: 'rgba(168, 85, 247, 0.15)',
-      drawing: '#00b8d9',
-      drawingInProgress: 'rgba(34, 211, 238, 0.75)',
-      drawingText: 'rgba(230, 237, 243, 0.85)'
+      ema20: '#F59E0B',
+      ema50: '#22D3EE',
+      ema200: '#A855F7',
+      up: '#00D4AA',
+      down: '#FF4D6A',
+      grid: 'rgba(255, 255, 255, 0.04)',
+      zoneOB: 'rgba(0, 212, 170, 0.14)',
+      zoneOBbear: 'rgba(255, 77, 106, 0.14)',
+      zoneFVG: 'rgba(79, 140, 255, 0.14)',
+      zoneOTE: 'rgba(168, 85, 247, 0.14)',
+      drawing: '#4F8CFF',
+      drawingInProgress: 'rgba(79, 140, 255, 0.75)',
+      drawingText: 'rgba(241, 245, 249, 0.85)'
     }
   },
 
   drawing: {
     enabled: true,
     fullscreenOnly: true,
-    defaultColor: '#00b8d9',
+    defaultColor: '#4F8CFF',
     lineWidth: 1.8,
     previewDash: [4, 4],
     fibLevels: [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1],

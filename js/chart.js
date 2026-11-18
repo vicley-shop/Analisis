@@ -37,17 +37,20 @@
     return tool === 'line' || tool === 'h' || tool === 'v' || tool === 'rect' || tool === 'fib';
   }
 
-  function emptyZones() {
-    return { ob: null, fvg: null, ote: null };
-  }
-
   function normalizeZones(zones) {
-    if (!zones || typeof zones !== 'object') return emptyZones();
+    if (!zones || typeof zones !== 'object') return { ob: null, fvg: null, ote: null };
     return {
       ob: zones.ob || null,
       fvg: zones.fvg || null,
       ote: zones.ote || null
     };
+  }
+
+  function isValidZone(zone) {
+    return zone &&
+      Number.isFinite(zone.top) &&
+      Number.isFinite(zone.bottom) &&
+      zone.top > zone.bottom;
   }
 
   function create(canvas, opts) {
@@ -71,7 +74,7 @@
       resizeTimer: null,
       emas: { e20: [], e50: [], e200: [] },
       emasMeta: { lastLen: 0, firstT: 0, lastC: NaN },
-      zones: emptyZones(),
+      zones: { ob: null, fvg: null, ote: null },
       tool: 'cursor',
       drawings: [],
       draft: null,
@@ -210,8 +213,8 @@
 
     function fillText(text, x, y, fillColor, align) {
       ctx.save();
-      ctx.fillStyle = fillColor || color('drawingText', 'rgba(230, 237, 243, 0.85)');
-      ctx.font = '11px system-ui, sans-serif';
+      ctx.fillStyle = fillColor || color('drawingText', 'rgba(241, 245, 249, 0.85)');
+      ctx.font = '11px "JetBrains Mono", system-ui, sans-serif';
       ctx.textAlign = align || 'left';
       ctx.textBaseline = 'middle';
       ctx.fillText(text, x, y);
@@ -258,8 +261,8 @@
 
     function renderDrawing(d, r, bounds, plotW, plotH, isDraft) {
       if (!d || !d.p1) return;
-      const baseCol = d.color || drawCfg().defaultColor || color('drawing', '#00b8d9');
-      const strokeColor = isDraft ? color('drawingInProgress', 'rgba(34, 211, 238, 0.75)') : baseCol;
+      const baseCol = d.color || drawCfg().defaultColor || color('drawing', '#4F8CFF');
+      const strokeColor = isDraft ? color('drawingInProgress', 'rgba(79, 140, 255, 0.75)') : baseCol;
       const dashed = isDraft;
 
       const s1 = dataToScreen(d.p1, r, bounds, plotW, plotH);
@@ -437,17 +440,17 @@
     function resize() { schedule(); }
 
     function addZoneToRange(zone, bounds) {
-      if (!zone) return;
+      if (!isValidZone(zone)) return;
       if (zone.top > bounds.hi) bounds.hi = zone.top;
       if (zone.bottom < bounds.lo) bounds.lo = zone.bottom;
     }
 
     function computeBounds(r) {
-      const vis = st.bars.slice(r.start, r.end);
       const bounds = { lo: Infinity, hi: -Infinity };
-      for (let i = 0; i < vis.length; i++) {
-        if (vis[i].l < bounds.lo) bounds.lo = vis[i].l;
-        if (vis[i].h > bounds.hi) bounds.hi = vis[i].h;
+      for (let i = r.start; i < r.end; i++) {
+        const b = st.bars[i];
+        if (b.l < bounds.lo) bounds.lo = b.l;
+        if (b.h > bounds.hi) bounds.hi = b.h;
       }
       addZoneToRange(st.zones.ob, bounds);
       addZoneToRange(st.zones.fvg, bounds);
@@ -463,14 +466,17 @@
     }
 
     function drawZone(zone, fillColor, r, x, y, plotW) {
-      if (!zone) return;
+      if (!isValidZone(zone)) return;
       const idx = zone.index != null ? zone.index : r.start;
       if (idx >= r.end) return;
       const xStart = idx >= r.start ? x(idx) : PAD.l;
       const xEnd = PAD.l + plotW;
       if (xStart >= xEnd) return;
+      const yTop = y(zone.top);
+      const yBottom = y(zone.bottom);
+      if (!Number.isFinite(yTop) || !Number.isFinite(yBottom)) return;
       ctx.fillStyle = fillColor;
-      ctx.fillRect(xStart, y(zone.top), xEnd - xStart, y(zone.bottom) - y(zone.top));
+      ctx.fillRect(xStart, yTop, xEnd - xStart, yBottom - yTop);
     }
 
     function draw() {
@@ -487,8 +493,6 @@
 
       const r = barsRange();
       if (!r) return;
-      const vis = st.bars.slice(r.start, r.end);
-      if (!vis.length) return;
 
       const plotW = dims.plotW;
       const plotH = dims.plotH;
@@ -499,10 +503,10 @@
       const y = function (p) { return PAD.t + (bounds.hi - p) / (bounds.hi - bounds.lo) * plotH; };
       const x = function (idx) { return PAD.l + (idx - r.start) * step + step / 2; };
 
-      ctx.font = '11px system-ui, sans-serif';
+      ctx.font = '11px "JetBrains Mono", system-ui, sans-serif';
       ctx.textBaseline = 'middle';
-      ctx.strokeStyle = color('grid', 'rgba(255, 255, 255, 0.06)');
-      ctx.fillStyle = '#64748b';
+      ctx.strokeStyle = color('grid', 'rgba(255, 255, 255, 0.04)');
+      ctx.fillStyle = '#64748B';
       ctx.textAlign = 'left';
       for (let k = 0; k <= 4; k++) {
         const p = bounds.lo + (bounds.hi - bounds.lo) * k / 4;
@@ -519,17 +523,17 @@
       ctx.rect(PAD.l, PAD.t, plotW, plotH);
       ctx.clip();
 
-      drawZone(st.zones.ote, color('zoneOTE', 'rgba(168, 85, 247, 0.15)'), r, x, y, plotW);
-      drawZone(st.zones.fvg, color('zoneFVG', 'rgba(0, 184, 217, 0.15)'), r, x, y, plotW);
+      drawZone(st.zones.ote, color('zoneOTE', 'rgba(168, 85, 247, 0.14)'), r, x, y, plotW);
+      drawZone(st.zones.fvg, color('zoneFVG', 'rgba(79, 140, 255, 0.14)'), r, x, y, plotW);
       if (st.zones.ob) {
         const obColor = st.zones.ob.direction === 1
-          ? color('zoneOB', 'rgba(16, 185, 129, 0.15)')
-          : 'rgba(244, 63, 94, 0.15)';
+          ? color('zoneOB', 'rgba(0, 212, 170, 0.14)')
+          : color('zoneOBbear', 'rgba(255, 77, 106, 0.14)');
         drawZone(st.zones.ob, obColor, r, x, y, plotW);
       }
 
-      const upColor = color('up', '#10b981');
-      const downColor = color('down', '#f43f5e');
+      const upColor = color('up', '#00D4AA');
+      const downColor = color('down', '#FF4D6A');
 
       ctx.lineWidth = 1;
       ctx.strokeStyle = downColor;
@@ -585,9 +589,9 @@
         }
         ctx.stroke();
       }
-      drawEma(st.emas.e20, color('ema20', '#f59e0b'));
-      drawEma(st.emas.e50, color('ema50', '#00b8d9'));
-      drawEma(st.emas.e200, color('ema200', '#a855f7'));
+      drawEma(st.emas.e20, color('ema20', '#F59E0B'));
+      drawEma(st.emas.e50, color('ema50', '#22D3EE'));
+      drawEma(st.emas.e200, color('ema200', '#A855F7'));
 
       for (let i = 0; i < st.drawings.length; i++) {
         renderDrawing(st.drawings[i], r, bounds, plotW, plotH, false);
@@ -599,10 +603,11 @@
 
       ctx.restore();
 
-      if (st.px != null && !st.drag && !st.pinchStart && !st.pendingDraw &&
+      if (st.tool === 'cursor' &&
+          st.px != null && !st.drag && !st.pinchStart && !st.pendingDraw &&
           st.px >= PAD.l && st.px <= PAD.l + plotW &&
           st.py >= PAD.t && st.py <= PAD.t + plotH) {
-        ctx.strokeStyle = 'rgba(139, 152, 169, 0.5)';
+        ctx.strokeStyle = 'rgba(148, 163, 184, 0.5)';
         ctx.setLineDash([3, 3]);
         ctx.beginPath();
         ctx.moveTo(st.px, PAD.t);
@@ -613,9 +618,9 @@
         ctx.setLineDash([]);
 
         const price = bounds.hi - (st.py - PAD.t) / plotH * (bounds.hi - bounds.lo);
-        ctx.fillStyle = '#141f2e';
+        ctx.fillStyle = '#161B24';
         ctx.fillRect(PAD.l + plotW + 1, st.py - 8, PAD.r - 2, 16);
-        ctx.fillStyle = '#e6edf3';
+        ctx.fillStyle = '#F1F5F9';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
         ctx.fillText(formatPrice(price), PAD.l + plotW + 5, st.py);
@@ -662,7 +667,7 @@
             type: st.tool,
             p1: dataPoint,
             p2: dataPoint,
-            color: drawCfg().defaultColor || color('drawing', '#00b8d9')
+            color: drawCfg().defaultColor || color('drawing', '#4F8CFF')
           });
           saveDrawings();
           schedule();
@@ -754,7 +759,7 @@
             type: st.draft.type,
             p1: st.draft.p1,
             p2: st.draft.p2 || st.draft.p1,
-            color: drawCfg().defaultColor || color('drawing', '#00b8d9')
+            color: drawCfg().defaultColor || color('drawing', '#4F8CFF')
           });
           saveDrawings();
         }
@@ -782,6 +787,9 @@
     }
 
     function onWheel(e) {
+      const p = localPoint(e);
+      const dims = plotDims();
+      if (!insidePlot(p, dims)) return;
       e.preventDefault();
       zoom(e.deltaY > 0 ? WHEEL_ZOOM_FACTOR : 1 / WHEEL_ZOOM_FACTOR);
     }

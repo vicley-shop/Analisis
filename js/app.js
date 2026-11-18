@@ -22,7 +22,6 @@
     lastAnalysisAt: 0,
     signalLog: [],
     lastVerdictState: 'wait',
-    currentTool: 'cursor',
     drawMenuOpen: false,
     tickBuffer: new Map(),
     rafId: 0,
@@ -31,6 +30,7 @@
 
   let chart = null;
   let feed = null;
+  let fsAbort = null;
 
   const MAX_SIGNAL_LOG = 500;
 
@@ -59,6 +59,10 @@
     return (s / 100) * 90 * dir;
   }
 
+  function currentTool() {
+    return chart && typeof chart.getTool === 'function' ? chart.getTool() : 'cursor';
+  }
+
   function flushTicks() {
     if (state.rafId) return;
     state.rafId = requestAnimationFrame(function () {
@@ -70,7 +74,6 @@
   }
 
   function refillGap(tf) {
-    if (!state.gapRefill) state.gapRefill = {};
     if (state.gapRefill[tf]) return;
     state.gapRefill[tf] = true;
 
@@ -86,7 +89,7 @@
         scheduleAnalysis(true);
       }
     }).catch(function () { void 0; }).then(function () {
-      if (state.gapRefill) delete state.gapRefill[tf];
+      delete state.gapRefill[tf];
     });
   }
 
@@ -135,6 +138,7 @@
     if (m === 'live') { cls = 'ok'; msg = 'En vivo'; }
     else if (m === 'polling') { cls = 'warn'; msg = 'Sondeo'; }
     else if (m === 'reconnecting') { cls = 'warn'; msg = 'Reconectando…'; }
+    else if (m === 'stale') { cls = 'warn'; msg = 'Datos obsoletos'; }
     else if (m === 'error') { cls = 'bad'; msg = 'Sin conexión'; }
     dot.className = 'dot ' + cls;
     txt.textContent = msg;
@@ -202,13 +206,15 @@
     const reason = $('verdictReason');
 
     if (!a) {
-      badge.textContent = 'ESPERAR';
+      badge.innerHTML = '<span class="verdict-icon" aria-hidden="true">◷</span><span class="verdict-text">ESPERAR</span>';
       badge.className = 'verdict-badge wait';
       reason.textContent = 'Esperando datos del mercado...';
       return;
     }
 
-    badge.textContent = a.verdictLabel;
+    const icon = a.verdictState === 'buy' ? '▲' : a.verdictState === 'sell' ? '▼' : '◷';
+    badge.innerHTML = '<span class="verdict-icon" aria-hidden="true">' + icon + '</span>' +
+      '<span class="verdict-text">' + esc(a.verdictLabel) + '</span>';
     badge.className = 'verdict-badge ' + a.verdictState;
 
     let text = a.verdictReason || '';
@@ -250,16 +256,16 @@
 
     const lines = [];
     const bd = smc.breakdown || {};
-    const order = ['mss', 'sweep', 'fvg', 'ob', 'ote', 'penalty', 'vetoed'];
+    const order = ['mss', 'sweep', 'fvg', 'ob', 'ote', 'htfBias', 'penalty', 'vetoed'];
     const names = {
       mss: 'Estructura', sweep: 'Sweep', fvg: 'FVG', ob: 'Order Block',
-      ote: 'OTE', penalty: 'Penalización', vetoed: 'Veto'
+      ote: 'OTE', htfBias: 'Sesgo HTF', penalty: 'Penalización', vetoed: 'Veto'
     };
 
     order.forEach(function (key) {
       const e = bd[key];
       if (!e || !e.weighted) return;
-      const sign = (key === 'penalty' || key === 'vetoed') ? '−' : '+';
+      const sign = (key === 'penalty' || key === 'vetoed') ? '−' : (e.weighted < 0 ? '−' : '+');
       const val = Math.abs(e.weighted).toFixed(1);
       const detail = e.reason ? ' — ' + e.reason : '';
       lines.push('<li>' + esc(names[key] || key) + ': ' + sign + val + esc(detail) + '</li>');
@@ -271,6 +277,16 @@
       smc.vetoes.forEach(function (v) {
         lines.push('<li style="color: var(--warn)">⚠ ' + esc(v) + '</li>');
       });
+    }
+
+    if (typeof smc.riskMultiplier === 'number' && !smc.vetoed) {
+      const pct = Math.round(smc.riskMultiplier * 100);
+      const color = pct >= 100 ? 'var(--up)' : pct >= 50 ? 'var(--warn)' : 'var(--down)';
+      lines.push('<li style="color: ' + color + '">Riesgo sugerido: ' + pct + '% del máximo.</li>');
+    }
+
+    if (smc.blockerInfo) {
+      lines.push('<li style="color: var(--warn)">⏱ ' + esc(smc.blockerInfo.label) + '</li>');
     }
 
     reasonsEl.innerHTML = lines.join('');
@@ -459,7 +475,8 @@
         confidence: res.confidence,
         marketOpen: res.marketOpen,
         sessionActive: res.highLiquidity,
-        entryTf: entryTf
+        entryTf: entryTf,
+        htfDirection: res.overallDirection
       };
       state.smcResult = SMC.evaluate(closedBars, res.overallDirection, smcCtx);
     } else {
@@ -474,6 +491,8 @@
         trend: 'Débil',
         vetoed: true,
         grade: 'Débil',
+        riskMultiplier: 0.0,
+        blockerInfo: null,
         activeComponents: 0
       };
     }
@@ -506,7 +525,7 @@
     const tfs = CFG.timeframes.list || ['15m', '1h', '4h', '1d'];
 
     const tasks = tfs.map(function (tf) {
-      return function () { return D.fetchBars(state.symbol, tf, 1000); };
+      return function (signal) { return D.fetchBars(state.symbol, tf, 1000, signal); };
     });
 
     return D.pool(tasks, 3, 20000).then(function (results) {
@@ -634,14 +653,17 @@
       }
     });
 
+    fsAbort = new AbortController();
+    const fsOpts = { signal: fsAbort.signal };
+
     document.addEventListener('fullscreenchange', function () {
       updateDrawVisibility();
       if (chart) chart.resize();
-    });
+    }, fsOpts);
     document.addEventListener('webkitfullscreenchange', function () {
       updateDrawVisibility();
       if (chart) chart.resize();
-    });
+    }, fsOpts);
 
     initDrawingMenu();
     initDrawingShortcuts();
@@ -694,7 +716,6 @@
   }
 
   function setTool(tool) {
-    state.currentTool = tool;
     const menu = $('drawingMenu');
     if (menu) {
       Array.prototype.forEach.call(menu.querySelectorAll('[data-tool]'), function (btn) {
@@ -752,7 +773,7 @@
 
       if (e.key === 'Escape') {
         if (state.drawMenuOpen) { closeDrawingMenu(); e.preventDefault(); return; }
-        if (state.currentTool !== 'cursor') { setTool('cursor'); e.preventDefault(); }
+        if (currentTool() !== 'cursor') { setTool('cursor'); e.preventDefault(); }
         return;
       }
       if (e.key === 'd' || e.key === 'D') {
@@ -880,6 +901,9 @@
 
   function cleanup() {
     if (state.rafId) { cancelAnimationFrame(state.rafId); state.rafId = 0; }
+    if (state.renderTimer) { clearTimeout(state.renderTimer); state.renderTimer = null; }
+    if (state.analysisTimer) { clearTimeout(state.analysisTimer); state.analysisTimer = null; }
+    if (fsAbort) { fsAbort.abort(); fsAbort = null; }
     if (chart) { if (typeof chart.destroy === 'function') chart.destroy(); chart = null; }
     if (feed) { feed.stop(); feed = null; }
   }

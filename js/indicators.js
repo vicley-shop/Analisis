@@ -87,6 +87,11 @@
     return rma(tr(highs, lows, closes), period || 14);
   }
 
+  function rsiValue(g, l) {
+    if (l === 0) return g === 0 ? 50 : 100;
+    return 100 - 100 / (1 + g / l);
+  }
+
   function rsi(closes, period) {
     period = period || 14;
     const n = closes.length;
@@ -103,20 +108,51 @@
     gains /= period;
     losses /= period;
 
-    function value(g, l) {
-      if (l === 0) return g === 0 ? 50 : 100;
-      return 100 - 100 / (1 + g / l);
-    }
-
-    out[period] = value(gains, losses);
+    out[period] = rsiValue(gains, losses);
 
     for (let i = period + 1; i < n; i++) {
       const change = closes[i] - closes[i - 1];
       gains = (gains * (period - 1) + (change > 0 ? change : 0)) / period;
       losses = (losses * (period - 1) + (change < 0 ? -change : 0)) / period;
-      out[i] = value(gains, losses);
+      out[i] = rsiValue(gains, losses);
     }
     return out;
+  }
+
+  function initRsiState(closes, period) {
+    period = period || 14;
+    if (!closes || closes.length <= period) return null;
+    let gains = 0;
+    let losses = 0;
+    for (let i = 1; i <= period; i++) {
+      const change = closes[i] - closes[i - 1];
+      if (change >= 0) gains += change;
+      else losses -= change;
+    }
+    gains /= period;
+    losses /= period;
+    return {
+      period: period,
+      prevClose: closes[period],
+      gains: gains,
+      losses: losses,
+      value: rsiValue(gains, losses)
+    };
+  }
+
+  function nextRsi(state, close) {
+    if (!state || !Number.isFinite(close)) return state;
+    const change = close - state.prevClose;
+    const period = state.period;
+    const gains = (state.gains * (period - 1) + (change > 0 ? change : 0)) / period;
+    const losses = (state.losses * (period - 1) + (change < 0 ? -change : 0)) / period;
+    return {
+      period: period,
+      prevClose: close,
+      gains: gains,
+      losses: losses,
+      value: rsiValue(gains, losses)
+    };
   }
 
   function adx(highs, lows, closes, period) {
@@ -161,6 +197,107 @@
     };
   }
 
+  function computeDx(high, low, close, prevHigh, prevLow, prevClose) {
+    const upMove = high - prevHigh;
+    const downMove = prevLow - low;
+    const plusDM = (upMove > downMove && upMove > 0) ? upMove : 0;
+    const minusDM = (downMove > upMove && downMove > 0) ? downMove : 0;
+    const trueRange = Math.max(
+      high - low,
+      Math.abs(high - prevClose),
+      Math.abs(low - prevClose)
+    );
+    return { plusDM, minusDM, trueRange };
+  }
+
+  function initAdxState(highs, lows, closes, period) {
+    period = period || 14;
+    if (!closes || closes.length < period * 2 + 1) return null;
+
+    let sumPlus = 0;
+    let sumMinus = 0;
+    let sumTr = 0;
+
+    for (let i = 1; i <= period; i++) {
+      const d = computeDx(highs[i], lows[i], closes[i], highs[i - 1], lows[i - 1], closes[i - 1]);
+      sumPlus += d.plusDM;
+      sumMinus += d.minusDM;
+      sumTr += d.trueRange;
+    }
+
+    let smoothPlus = sumPlus / period;
+    let smoothMinus = sumMinus / period;
+    let smoothTr = sumTr / period;
+
+    function diAndDx(sp, sm, st) {
+      const plusDI = st === 0 ? 0 : (100 * sp) / st;
+      const minusDI = st === 0 ? 0 : (100 * sm) / st;
+      const sum = plusDI + minusDI;
+      const dx = sum === 0 ? 0 : (100 * Math.abs(plusDI - minusDI)) / sum;
+      return { plusDI, minusDI, dx };
+    }
+
+    let first = diAndDx(smoothPlus, smoothMinus, smoothTr);
+    let dxSum = first.dx;
+    let idx = period + 1;
+
+    while (idx < period * 2 + 1 && idx < closes.length) {
+      const d = computeDx(highs[idx], lows[idx], closes[idx], highs[idx - 1], lows[idx - 1], closes[idx - 1]);
+      smoothPlus = updateRma(smoothPlus, d.plusDM, period);
+      smoothMinus = updateRma(smoothMinus, d.minusDM, period);
+      smoothTr = updateRma(smoothTr, d.trueRange, period);
+      const r = diAndDx(smoothPlus, smoothMinus, smoothTr);
+      dxSum += r.dx;
+      idx++;
+    }
+
+    const lastIdx = Math.min(idx, closes.length) - 1;
+    if (lastIdx < period * 2) return null;
+
+    return {
+      period: period,
+      prevHigh: highs[lastIdx],
+      prevLow: lows[lastIdx],
+      prevClose: closes[lastIdx],
+      smoothPlus: smoothPlus,
+      smoothMinus: smoothMinus,
+      smoothTr: smoothTr,
+      adx: dxSum / period,
+      plusDI: first.plusDI,
+      minusDI: first.minusDI
+    };
+  }
+
+  function nextAdx(state, high, low, close) {
+    if (!state) return state;
+    if (!Number.isFinite(high) || !Number.isFinite(low) || !Number.isFinite(close)) return state;
+
+    const d = computeDx(high, low, close, state.prevHigh, state.prevLow, state.prevClose);
+    const period = state.period;
+    const smoothPlus = updateRma(state.smoothPlus, d.plusDM, period);
+    const smoothMinus = updateRma(state.smoothMinus, d.minusDM, period);
+    const smoothTr = updateRma(state.smoothTr, d.trueRange, period);
+
+    const plusDI = smoothTr === 0 ? 0 : (100 * smoothPlus) / smoothTr;
+    const minusDI = smoothTr === 0 ? 0 : (100 * smoothMinus) / smoothTr;
+    const sum = plusDI + minusDI;
+    const dx = sum === 0 ? 0 : (100 * Math.abs(plusDI - minusDI)) / sum;
+    const adxVal = updateRma(state.adx, dx, period);
+
+    return {
+      period: period,
+      prevHigh: high,
+      prevLow: low,
+      prevClose: close,
+      smoothPlus: smoothPlus,
+      smoothMinus: smoothMinus,
+      smoothTr: smoothTr,
+      adx: adxVal,
+      plusDI: plusDI,
+      minusDI: minusDI
+    };
+  }
+
   return {
     nulls: nulls,
     firstValid: firstValid,
@@ -173,6 +310,10 @@
     tr: tr,
     atr: atr,
     rsi: rsi,
-    adx: adx
+    initRsiState: initRsiState,
+    nextRsi: nextRsi,
+    adx: adx,
+    initAdxState: initAdxState,
+    nextAdx: nextAdx
   };
 }));
