@@ -1,53 +1,60 @@
 :root {
   color-scheme: dark;
 
-  --bg-0: #0b0e14;
-  --bg-1: #0f141c;
-  --bg-2: #141b26;
-  --bg-3: #1a2332;
+  --bg-0: #0B0E13;
+  --bg-1: #12161D;
+  --bg-2: #161B24;
+  --bg-3: #1C222D;
+  --bg-4: #232A36;
 
-  --border-0: #1e2836;
-  --border-1: #2a3648;
-  --border-2: #3a4a60;
+  --border-0: #1E242E;
+  --border-1: #2A3240;
+  --border-2: #3A4556;
 
-  --text-0: #f2f5f9;
-  --text-1: #9aa8b9;
-  --text-2: #65758a;
+  --text-0: #F1F5F9;
+  --text-1: #94A3B8;
+  --text-2: #64748B;
+  --text-3: #475569;
 
-  --accent: #5b8def;
-  --accent-hi: #7fa8f5;
-  --accent-soft: rgba(91, 141, 239, 0.10);
+  --accent: #4F8CFF;
+  --accent-hi: #7BA9FF;
+  --accent-soft: rgba(79, 140, 255, 0.10);
 
-  --up: #10b981;
-  --down: #f43f5e;
-  --warn: #f0b90b;
+  --up: #00D4AA;
+  --up-soft: rgba(0, 212, 170, 0.10);
+  --down: #FF4D6A;
+  --down-soft: rgba(255, 77, 106, 0.10);
+  --warn: #FFB800;
+  --warn-soft: rgba(255, 184, 0, 0.10);
 
-  --sbuy: #10b981;
-  --buy: #34d399;
-  --neu: #65758a;
-  --sell: #fb7185;
-  --ssell: #f43f5e;
+  --sbuy: #00D4AA;
+  --buy: #2EE6C0;
+  --neu: #64748B;
+  --sell: #FF7A8F;
+  --ssell: #FF4D6A;
 
-  --ema1: #f0b90b;
-  --ema2: #5b8def;
-  --ema3: #a855f7;
+  --ema1: #F59E0B;
+  --ema2: #22D3EE;
+  --ema3: #A855F7;
 
   --grid: rgba(255, 255, 255, 0.04);
 
-  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+  --font-ui: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
   --radius-sm: 6px;
-  --radius-md: 10px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
 
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
   --space-4: 16px;
+  --space-5: 20px;
   --space-6: 24px;
   --space-8: 32px;
 
-  --content-width: 1440px;
+  --content-width: 1480px;
 }
 
 * { box-sizing: border-box; }
@@ -56,7 +63,6 @@ html {
   min-width: 320px;
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
-  scroll-behavior: smooth;
   scrollbar-color: var(--border-1) var(--bg-0);
 }
 
@@ -66,8 +72,8 @@ body {
   overflow-x: hidden;
   background: var(--bg-0);
   color: var(--text-0);
-  font: 13.5px/1.5 var(--font-ui);
-  font-feature-settings: "tnum" 1, "cv02" 1, "cv03" 1;
+  font: 13px/1.5 var(--font-ui);
+  font-feature-settings: "cv02" 1, "cv03" 1, "cv04" 1, "cv11" 1;
   padding-bottom: env(safe-area-inset-bottom);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -95,14 +101,14 @@ button:focus-visible, a:focus-visible {
   position: sticky;
   top: 0;
   z-index: 30;
-  background: rgba(11, 14, 20, 0.88);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  backdrop-filter: blur(20px) saturate(180%);
+  background: rgba(11, 14, 19, 0.92);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  backdrop-filter: blur(16px) saturate(160%);
   border-bottom: 1px solid var(--border-0);
 }
 
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .top { background: rgba(11, 14, 20, 0.98); }
+  .top { background: rgba(11, 14, 19, 0.98); }
 }
 
 .top-inner {
@@ -126,12 +132,13 @@ button:focus-visible, a:focus-visible {
   place-items: center;
   width: 30px;
   height: 30px;
-  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-hi) 100%);
+  background: linear-gradient(135deg, var(--accent) 0%, var(--up) 100%);
   color: var(--bg-0);
+  font-family: var(--font-mono);
   font-weight: 800;
   font-size: 15px;
   border-radius: var(--radius-sm);
-  letter-spacing: -0.02em;
+  letter-spacing: -0.04em;
 }
 
 .brand-text {
@@ -152,11 +159,11 @@ button:focus-visible, a:focus-visible {
   padding: 1px 6px;
   background: var(--accent-soft);
   color: var(--accent);
-  font-size: 9.5px;
+  font-size: 9px;
   font-weight: 800;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   border-radius: 3px;
-  border: 1px solid rgba(91, 141, 239, 0.25);
+  border: 1px solid rgba(79, 140, 255, 0.25);
 }
 
 .symbols {
@@ -172,7 +179,7 @@ button:focus-visible, a:focus-visible {
 
 .sym {
   flex-shrink: 0;
-  min-width: 96px;
+  min-width: 104px;
   padding: 6px 10px;
   border: 1px solid var(--border-0);
   border-radius: var(--radius-sm);
@@ -194,9 +201,9 @@ button:focus-visible, a:focus-visible {
 
 .sym-name {
   display: block;
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 700;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.04em;
   color: var(--text-1);
 }
 
@@ -235,11 +242,11 @@ button:focus-visible, a:focus-visible {
   height: 6px;
   border-radius: 50%;
   background: var(--neu);
-  box-shadow: 0 0 0 3px rgba(101, 117, 138, 0.15);
+  box-shadow: 0 0 0 3px rgba(100, 116, 139, 0.15);
 }
-.dot.ok { background: var(--up); box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.18); }
-.dot.warn { background: var(--warn); box-shadow: 0 0 0 3px rgba(240, 185, 11, 0.18); }
-.dot.bad { background: var(--down); box-shadow: 0 0 0 3px rgba(244, 63, 94, 0.18); }
+.dot.ok { background: var(--up); box-shadow: 0 0 0 3px rgba(0, 212, 170, 0.18); }
+.dot.warn { background: var(--warn); box-shadow: 0 0 0 3px rgba(255, 184, 0, 0.18); }
+.dot.bad { background: var(--down); box-shadow: 0 0 0 3px rgba(255, 77, 106, 0.18); }
 
 .up { color: var(--up); }
 .down { color: var(--down); }
@@ -261,8 +268,13 @@ button:focus-visible, a:focus-visible {
   padding: var(--space-4);
   border: 1px solid var(--border-0);
   border-radius: var(--radius-md);
-  background: var(--bg-2);
+  background: var(--bg-1);
   contain: layout style;
+  transition: border-color 150ms ease;
+}
+
+@media (hover: hover) {
+  .card:hover { border-color: var(--border-1); }
 }
 
 .card-head {
@@ -288,11 +300,11 @@ button:focus-visible, a:focus-visible {
 
 .price-big {
   font-family: var(--font-mono);
-  font-size: clamp(30px, 4.5vw, 42px);
+  font-size: clamp(30px, 4.5vw, 44px);
   font-weight: 700;
   letter-spacing: -0.03em;
   color: var(--text-0);
-  line-height: 1.1;
+  line-height: 1.05;
   font-variant-numeric: tabular-nums;
   margin-bottom: var(--space-2);
 }
@@ -313,7 +325,7 @@ button:focus-visible, a:focus-visible {
 
 .price-sub {
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: 11px;
   color: var(--text-1);
   font-variant-numeric: tabular-nums;
 }
@@ -321,6 +333,7 @@ button:focus-visible, a:focus-visible {
 .session-badge {
   display: inline-flex;
   align-items: center;
+  gap: 4px;
   padding: 3px 8px;
   border: 1px solid var(--border-1);
   border-radius: var(--radius-sm);
@@ -332,16 +345,16 @@ button:focus-visible, a:focus-visible {
 }
 
 .session-badge.ok {
-  border-color: rgba(16, 185, 129, 0.35);
-  background: rgba(16, 185, 129, 0.08);
+  border-color: rgba(0, 212, 170, 0.35);
+  background: var(--up-soft);
   color: var(--up);
 }
 
 .session-badge.neutral { color: var(--text-2); }
 
 .session-badge.bad {
-  border-color: rgba(244, 63, 94, 0.35);
-  background: rgba(244, 63, 94, 0.08);
+  border-color: rgba(255, 77, 106, 0.35);
+  background: var(--down-soft);
   color: var(--down);
 }
 
@@ -360,9 +373,11 @@ button:focus-visible, a:focus-visible {
 }
 
 .verdict-badge {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
   align-self: flex-start;
-  padding: 8px 20px;
+  padding: 10px 22px;
   border-radius: var(--radius-sm);
   font-size: 15px;
   font-weight: 800;
@@ -370,27 +385,32 @@ button:focus-visible, a:focus-visible {
   text-transform: uppercase;
 }
 
+.verdict-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
 .verdict-badge.wait {
-  background: rgba(101, 117, 138, 0.12);
+  background: rgba(100, 116, 139, 0.10);
   color: var(--text-1);
   border: 1px solid var(--border-1);
 }
 
 .verdict-badge.buy {
-  background: rgba(16, 185, 129, 0.12);
-  color: var(--buy);
-  border: 1px solid rgba(16, 185, 129, 0.4);
+  background: var(--up-soft);
+  color: var(--up);
+  border: 1px solid rgba(0, 212, 170, 0.35);
 }
 
 .verdict-badge.sell {
-  background: rgba(244, 63, 94, 0.12);
-  color: var(--sell);
-  border: 1px solid rgba(244, 63, 94, 0.4);
+  background: var(--down-soft);
+  color: var(--down);
+  border: 1px solid rgba(255, 77, 106, 0.35);
 }
 
 .verdict-reason {
   font-size: 13px;
-  line-height: 1.55;
+  line-height: 1.6;
   color: var(--text-1);
 }
 
@@ -399,7 +419,7 @@ button:focus-visible, a:focus-visible {
 .gauge-card svg {
   display: block;
   width: 100%;
-  max-width: 260px;
+  max-width: 240px;
   margin: var(--space-1) auto 0;
   overflow: visible;
 }
@@ -408,7 +428,7 @@ button:focus-visible, a:focus-visible {
   fill: none;
   stroke-width: 14;
   stroke-linecap: butt;
-  opacity: 0.9;
+  opacity: 0.85;
 }
 
 .g1 { stroke: var(--ssell); }
@@ -445,7 +465,7 @@ button:focus-visible, a:focus-visible {
 
 .gauge-score {
   text-align: center;
-  font-size: 11.5px;
+  font-size: 11px;
   color: var(--text-1);
   font-variant-numeric: tabular-nums;
   margin-top: var(--space-1);
@@ -464,9 +484,9 @@ button:focus-visible, a:focus-visible {
 
 .smc-bar-bg {
   width: 100%;
-  height: 4px;
+  height: 5px;
   background: var(--bg-3);
-  border-radius: 2px;
+  border-radius: 3px;
   overflow: hidden;
   margin-bottom: var(--space-3);
 }
@@ -474,7 +494,7 @@ button:focus-visible, a:focus-visible {
 .smc-bar-fill {
   height: 100%;
   background: var(--accent);
-  border-radius: 2px;
+  border-radius: 3px;
   transition: width 400ms ease, background-color 400ms ease;
 }
 
@@ -483,7 +503,7 @@ button:focus-visible, a:focus-visible {
   list-style: disc;
   font-size: 12.5px;
   color: var(--text-1);
-  line-height: 1.65;
+  line-height: 1.7;
 }
 
 .smc-reasons li { margin-bottom: 3px; list-style: inherit; }
@@ -551,7 +571,7 @@ button:focus-visible, a:focus-visible {
   height: 30px;
   border: 1px solid var(--border-0);
   border-radius: var(--radius-sm);
-  background: var(--bg-1);
+  background: var(--bg-2);
   color: var(--text-1);
   font-size: 14px;
   transition: border-color 120ms ease, background-color 120ms ease, color 120ms ease;
@@ -561,7 +581,7 @@ button:focus-visible, a:focus-visible {
   .chart-tools button:hover {
     border-color: var(--border-1);
     color: var(--text-0);
-    background: var(--bg-3);
+    background: var(--bg-4);
   }
 }
 
@@ -574,11 +594,11 @@ button:focus-visible, a:focus-visible {
 #chart {
   display: block;
   width: 100%;
-  height: 340px;
+  height: 360px;
   touch-action: pan-y;
   cursor: crosshair;
   border-radius: var(--radius-sm);
-  background: var(--bg-1);
+  background: var(--bg-0);
 }
 
 #chart:focus-visible {
@@ -614,8 +634,8 @@ button:focus-visible, a:focus-visible {
   padding: var(--space-1);
   border: 1px solid var(--border-1);
   border-radius: var(--radius-md);
-  background: var(--bg-3);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+  background: var(--bg-4);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
   display: flex;
   flex-direction: column;
   gap: 1px;
@@ -654,7 +674,7 @@ button:focus-visible, a:focus-visible {
 }
 
 .tool-btn.danger { color: var(--down); }
-.tool-btn.danger:hover { background: rgba(244, 63, 94, 0.10); }
+.tool-btn.danger:hover { background: var(--down-soft); }
 
 .tool-icon {
   display: inline-grid;
@@ -695,7 +715,7 @@ button:focus-visible, a:focus-visible {
   place-items: center;
   border: 1px solid var(--border-0);
   border-radius: var(--radius-sm);
-  background: var(--bg-1);
+  background: var(--bg-2);
   color: var(--text-1);
   font-size: 18px;
   font-weight: 700;
@@ -705,7 +725,7 @@ button:focus-visible, a:focus-visible {
 }
 
 @media (hover: hover) {
-  .mtf-toggle:hover { border-color: var(--border-1); color: var(--text-0); background: var(--bg-3); }
+  .mtf-toggle:hover { border-color: var(--border-1); color: var(--text-0); background: var(--bg-4); }
 }
 
 .mtf-toggle-icon { display: block; transition: transform 200ms ease; }
@@ -726,7 +746,7 @@ button:focus-visible, a:focus-visible {
   padding: 10px 4px;
   border: 1px solid var(--border-0);
   border-radius: var(--radius-sm);
-  background: var(--bg-1);
+  background: var(--bg-2);
   color: var(--text-0);
   transition: border-color 120ms ease, background-color 120ms ease;
 }
@@ -744,7 +764,7 @@ button:focus-visible, a:focus-visible {
 .mtf .tfn {
   color: var(--text-2);
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.04em;
 }
@@ -770,14 +790,14 @@ button:focus-visible, a:focus-visible {
 
 .conclusion-text {
   font-size: 13px;
-  line-height: 1.65;
+  line-height: 1.7;
   color: var(--text-1);
 }
 
 .alert-card {
   grid-column: span 12;
-  border-color: rgba(240, 185, 11, 0.25);
-  background: linear-gradient(180deg, rgba(240, 185, 11, 0.03), var(--bg-2));
+  border-color: rgba(255, 184, 0, 0.25);
+  background: linear-gradient(180deg, rgba(255, 184, 0, 0.03), var(--bg-1));
 }
 
 .alert-list {
@@ -785,7 +805,7 @@ button:focus-visible, a:focus-visible {
   list-style: disc;
   color: var(--text-1);
   font-size: 12.5px;
-  line-height: 1.65;
+  line-height: 1.7;
 }
 
 .alert-list li { margin-bottom: 5px; list-style: inherit; }
@@ -794,7 +814,7 @@ button:focus-visible, a:focus-visible {
 .foot {
   padding: var(--space-6) var(--space-4) calc(var(--space-8) + env(safe-area-inset-bottom));
   color: var(--text-2);
-  font-size: 11.5px;
+  font-size: 11px;
   text-align: center;
   border-top: 1px solid var(--border-0);
   width: min(100%, var(--content-width));
@@ -847,14 +867,14 @@ button:focus-visible, a:focus-visible {
 @media (max-width: 600px) {
   .dashboard { padding: var(--space-2); gap: var(--space-2); }
   .card { padding: var(--space-3); }
-  #chart { height: 260px; }
+  #chart { height: 280px; }
 
   .metrics-grid { grid-template-columns: 1fr; }
   .mtf { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .mtf-card.expanded .mtf { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
   .price-big { font-size: 32px; }
-  .verdict-badge { font-size: 13px; padding: 7px 16px; }
+  .verdict-badge { font-size: 13px; padding: 8px 18px; }
 
   .brand-text strong { font-size: 12px; }
   .brand-mark { width: 26px; height: 26px; font-size: 13px; }
