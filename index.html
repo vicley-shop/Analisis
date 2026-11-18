@@ -4,18 +4,20 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="dark">
-  <meta name="theme-color" content="#0b0e14">
+  <meta name="theme-color" content="#0B0E13">
   <meta name="description" content="Market Consensus PRO — Análisis técnico multi-temporal, confluencia SMC y gestión de riesgo institucional.">
   <meta name="format-detection" content="telephone=no">
   <meta name="referrer" content="strict-origin-when-cross-origin">
   <title>Market Consensus PRO</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
   <style>
-    .skip-link{position:absolute;top:-100px;left:10px;z-index:9999;padding:12px 18px;background:#5b8def;color:#0b0e14;border-radius:8px;font-weight:700;font-size:14px;text-decoration:none;}
+    .skip-link{position:absolute;top:-100px;left:10px;z-index:9999;padding:12px 18px;background:#4F8CFF;color:#0B0E13;border-radius:8px;font-weight:700;font-size:14px;text-decoration:none;}
     .skip-link:focus{top:10px;}
-    button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid #5b8def;outline-offset:3px;}
+    button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,a:focus-visible{outline:2px solid #4F8CFF;outline-offset:3px;}
     [hidden]{display:none!important;}
-    .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;}
   </style>
 </head>
 <body>
@@ -23,13 +25,13 @@
 <a class="skip-link" href="#mainContent">Saltar al contenido principal</a>
 
 <noscript>
-  <div style="padding:48px 24px;text-align:center;color:#e6edf3;background:#0b0e14;min-height:100vh;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:16px;">
+  <div style="padding:48px 24px;text-align:center;color:#F1F5F9;background:#0B0E13;min-height:100vh;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:16px;">
     <h1 style="margin:0;font-size:22px;font-weight:700;">Market Consensus PRO</h1>
-    <p style="margin:0;max-width:480px;font-size:14px;color:#8b98ab;">Este panel requiere JavaScript habilitado para cargar datos de mercado, calcular el consenso multi-temporal y renderizar el gráfico.</p>
+    <p style="margin:0;max-width:480px;font-size:14px;color:#94A3B8;">Este panel requiere JavaScript habilitado para cargar datos de mercado, calcular el consenso multi-temporal y renderizar el gráfico.</p>
   </div>
 </noscript>
 
-<header class="top" role="banner">
+<header class="top">
   <div class="top-inner">
     <div class="brand" aria-label="Market Consensus PRO">
       <span class="brand-mark" aria-hidden="true">M</span>
@@ -39,14 +41,14 @@
       </span>
     </div>
     <nav class="symbols" id="symbolBar" role="toolbar" aria-label="Seleccionar mercado"></nav>
-    <div class="status" role="status" aria-live="polite">
+    <div class="status" role="status">
       <span class="dot" id="statusDot"></span>
       <span id="statusText">Conectando…</span>
     </div>
   </div>
 </header>
 
-<main id="mainContent" class="dashboard" role="main">
+<main id="mainContent" class="dashboard">
 
   <section class="price-card card" aria-labelledby="price-label">
     <header class="card-head">
@@ -65,7 +67,10 @@
       <span class="card-label" id="verdict-label">Veredicto de operación</span>
     </header>
     <div class="verdict-content" role="status" aria-live="polite">
-      <div id="verdictBadge" class="verdict-badge wait">ESPERAR</div>
+      <div id="verdictBadge" class="verdict-badge wait">
+        <span class="verdict-icon" aria-hidden="true">◷</span>
+        <span class="verdict-text">ESPERAR</span>
+      </div>
       <p id="verdictReason" class="verdict-reason">Analizando condiciones de mercado...</p>
     </div>
   </section>
@@ -191,7 +196,7 @@
 
 </main>
 
-<footer class="foot" role="contentinfo">
+<footer class="foot">
   <p>Market Consensus PRO · Análisis técnico institucional</p>
   <p>Fines educativos. No constituye asesoramiento financiero.</p>
 </footer>
