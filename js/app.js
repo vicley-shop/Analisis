@@ -34,7 +34,12 @@
 
   const MAX_SIGNAL_LOG = 500;
 
-  function $(id) { return document.getElementById(id); }
+  // ... [resto de helpers sin cambios: $, esc, fmt, sgn, needleAngle, currentTool,
+  //     flushTicks, refillGap, processTick, renderStatus, renderPrice, renderGauge,
+  //     renderVerdict, renderSMC, renderAlerts, renderMetrics, renderMtf, renderConclusion,
+  //     renderChart, renderAll, currentEntryPrice, logSignalIfChanged] ...
+
+  function $ (id) { return document.getElementById(id); }
 
   function esc(v) {
     return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) {
@@ -455,50 +460,82 @@
     state.lastVerdictState = curr;
   }
 
+  // ✅ FIX #3 + #4: runAnalysis SIEMPRE renderiza, aunque A.analyze o SMC.evaluate fallen.
   function runAnalysis() {
     state.lastAnalysisAt = Date.now();
 
-    const res = A.analyze(state.bars, { currentTf: state.tf, symbol: state.symbol });
+    let res = null;
+    try {
+      res = A.analyze(state.bars, { currentTf: state.tf, symbol: state.symbol });
+    } catch (e) {
+      console.error('[app] A.analyze lanzó excepción:', e);
+    }
     state.analysis = res;
 
-    const entryTf = res.entryTf || state.tf;
-    const entryBarsRaw = state.bars[entryTf];
+    if (res) {
+      try {
+        const entryTf = res.entryTf || state.tf;
+        const entryBarsRaw = state.bars[entryTf];
 
-    if (entryBarsRaw && entryBarsRaw.length > 50) {
-      const analysisCfg = CFG.analysis || {};
-      const useClosed = analysisCfg.useClosedCandlesOnly !== false;
-      const closedBars = (useClosed && entryBarsRaw.length > 1)
-        ? entryBarsRaw.slice(0, -1)
-        : entryBarsRaw;
+        if (entryBarsRaw && entryBarsRaw.length > 50) {
+          const analysisCfg = CFG.analysis || {};
+          const useClosed = analysisCfg.useClosedCandlesOnly !== false;
+          const closedBars = (useClosed && entryBarsRaw.length > 1)
+            ? entryBarsRaw.slice(0, -1)
+            : entryBarsRaw;
 
-      const smcCtx = {
-        confidence: res.confidence,
-        marketOpen: res.marketOpen,
-        sessionActive: res.highLiquidity,
-        entryTf: entryTf,
-        htfDirection: res.overallDirection
-      };
-      state.smcResult = SMC.evaluate(closedBars, res.overallDirection, smcCtx);
+          const smcCtx = {
+            confidence: res.confidence,
+            marketOpen: res.marketOpen,
+            sessionActive: res.highLiquidity,
+            entryTf: entryTf,
+            htfDirection: res.overallDirection
+          };
+          state.smcResult = SMC.evaluate(closedBars, res.overallDirection, smcCtx);
+        } else {
+          state.smcResult = {
+            score: 0,
+            label: 'Sin datos',
+            reasons: ['Esperando velas históricas…'],
+            vetoes: ['Historial insuficiente'],
+            breakdown: {},
+            zones: { ob: null, fvg: null, ote: null, allOBs: [], allFVGs: [] },
+            direction: 0,
+            trend: 'Débil',
+            vetoed: true,
+            grade: 'Débil',
+            riskMultiplier: 0.0,
+            blockerInfo: null,
+            activeComponents: 0
+          };
+        }
+      } catch (e) {
+        console.error('[app] SMC.evaluate lanzó excepción:', e);
+        state.smcResult = null;
+      }
+
+      // ✅ FIX #4: verificación explícita de cuántos TFs cargaron realmente.
+      const allTfs = CFG.timeframes.list || [];
+      const loadedTfs = allTfs.filter(function (tf) {
+        return state.bars[tf] && state.bars[tf].length;
+      });
+      if (loadedTfs.length < allTfs.length) {
+        console.warn('[app] runAnalysis: ' + loadedTfs.length + '/' + allTfs.length +
+          ' TFs con barras (' + loadedTfs.join(', ') + '). Faltan: ' +
+          allTfs.filter(function (tf) { return loadedTfs.indexOf(tf) === -1; }).join(', ') + '.');
+      }
+
+      logSignalIfChanged(res);
     } else {
-      state.smcResult = {
-        score: 0,
-        label: 'Sin datos',
-        reasons: ['Esperando velas históricas…'],
-        vetoes: ['Historial insuficiente'],
-        breakdown: {},
-        zones: { ob: null, fvg: null, ote: null, allOBs: [], allFVGs: [] },
-        direction: 0,
-        trend: 'Débil',
-        vetoed: true,
-        grade: 'Débil',
-        riskMultiplier: 0.0,
-        blockerInfo: null,
-        activeComponents: 0
-      };
+      state.smcResult = null;
     }
 
-    logSignalIfChanged(res);
-    renderAll();
+    // renderAll SIEMPRE se ejecuta, incluso si algo falló arriba.
+    try {
+      renderAll();
+    } catch (e) {
+      console.error('[app] renderAll lanzó excepción (UI puede quedar desincronizada):', e);
+    }
   }
 
   function scheduleAnalysis(force) {
@@ -535,6 +572,10 @@
         if (r && r.ok) state.bars[tfs[i]] = r.v;
       });
       state.loading = false;
+
+      const loaded = tfs.filter(function (tf) { return state.bars[tf] && state.bars[tf].length; });
+      console.info('[app] loadAllBars: ' + loaded.length + '/' + tfs.length + ' TFs cargados → [' + loaded.join(', ') + ']');
+
       runAnalysis();
       return results;
     }).catch(function (err) {
@@ -549,7 +590,7 @@
         runAnalysis();
         return partial;
       }
-      console.error('loadAllBars:', err.message || err);
+      console.error('[app] loadAllBars:', err && (err.message || err));
       renderAll();
       return null;
     });
@@ -883,11 +924,24 @@
     };
   }
 
+  // ✅ FIX #5: initChart y startFeed aislados con try/catch.
   function init() {
     buildSymbolBar();
     initMtfToggle();
-    initChart();
-    startFeed();
+
+    try {
+      initChart();
+    } catch (e) {
+      console.error('[app] initChart falló — el chart no funcionará:', e);
+    }
+
+    try {
+      startFeed();
+    } catch (e) {
+      console.error('[app] startFeed falló — no habrá datos en vivo:', e);
+      state.feedMode = 'error';
+      renderStatus();
+    }
 
     loadAllBars().then(function (results) {
       if (!results) return;
@@ -895,7 +949,13 @@
         ticks.forEach(function (t) { state.ticks[t.symbol] = t; });
         updateSymbolBarPrices();
         renderAll();
-      }).catch(function () { void 0; });
+      }).catch(function (e) {
+        console.error('[app] fetchLatest falló:', e);
+        renderAll();
+      });
+    }).catch(function (e) {
+      console.error('[app] loadAllBars rechazó en init:', e);
+      renderAll();
     });
   }
 
