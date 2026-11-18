@@ -110,9 +110,6 @@ window.AT.smc.structure = (function (I) {
     let dir = 0;
     let runningExtreme = null;
     let runningIdx = -1;
-    let lastPivotPrice = null;
-    let lastPivotIdx = -1;
-    let lastPivotDir = 0;
 
     for (let i = 0; i < n; i++) {
       const b = bars[i];
@@ -129,15 +126,8 @@ window.AT.smc.structure = (function (I) {
           const strength = Math.min(1, drop / (threshold * 4));
           highs.push({ index: runningIdx, price: runningExtreme, strength: strength });
           dir = -1;
-          lastPivotPrice = runningExtreme;
-          lastPivotIdx = runningIdx;
-          lastPivotDir = 1;
           runningExtreme = b.l;
           runningIdx = i;
-        } else {
-          const lowCandidate = b.l;
-          if (lowCandidate < runningExtreme) { /* noop */ }
-          if (runningExtreme == null) { runningExtreme = b.h; runningIdx = i; }
         }
         continue;
       }
@@ -149,9 +139,6 @@ window.AT.smc.structure = (function (I) {
           const strength = Math.min(1, drop / (threshold * 4));
           highs.push({ index: runningIdx, price: runningExtreme, strength: strength });
           dir = -1;
-          lastPivotPrice = runningExtreme;
-          lastPivotIdx = runningIdx;
-          lastPivotDir = 1;
           runningExtreme = b.l;
           runningIdx = i;
         }
@@ -162,9 +149,6 @@ window.AT.smc.structure = (function (I) {
           const strength = Math.min(1, rise / (threshold * 4));
           lows.push({ index: runningIdx, price: runningExtreme, strength: strength });
           dir = 1;
-          lastPivotPrice = runningExtreme;
-          lastPivotIdx = runningIdx;
-          lastPivotDir = -1;
           runningExtreme = b.h;
           runningIdx = i;
         }
@@ -172,11 +156,9 @@ window.AT.smc.structure = (function (I) {
     }
 
     if (dir === 1 && runningIdx >= 0 && runningExtreme != null) {
-      const strength = 0.3;
-      lows.push({ index: runningIdx, price: runningExtreme, strength: strength });
+      lows.push({ index: runningIdx, price: runningExtreme, strength: 0.3 });
     } else if (dir === -1 && runningIdx >= 0 && runningExtreme != null) {
-      const strength = 0.3;
-      highs.push({ index: runningIdx, price: runningExtreme, strength: strength });
+      highs.push({ index: runningIdx, price: runningExtreme, strength: 0.3 });
     }
 
     highs.sort(function (a, b) { return a.index - b.index; });

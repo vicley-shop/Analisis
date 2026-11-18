@@ -90,19 +90,13 @@ window.AT.smc.ote = (function () {
     return Math.abs(bar.c - bar.o) / range;
   }
 
-  function swingCandleQuality(bars, pivotIndex) {
-    const bar = bars[pivotIndex];
-    if (!bar) return 0;
-    return bodyRatio(bar);
-  }
-
   function passesSwingQuality(bars, swingEndPivot) {
     const bar = bars[swingEndPivot.index];
     if (!bar) return false;
     return bodyRatio(bar) >= swingBodyRatioMin();
   }
 
-  function passesBosGate(bars, mss, direction) {
+  function passesBosGate(mss, direction) {
     if (!requireBosForOte()) return true;
     if (!mss || mss.direction !== direction) return false;
     return true;
@@ -159,7 +153,7 @@ window.AT.smc.ote = (function () {
         swingSize: swingSize,
         swingSizeAtr: swingSize / atrVal,
         ageBars: ageBars,
-        bodyRatio: swingCandleQuality(bars, swingEnd.index)
+        bodyRatio: bodyRatio(bars[swingEnd.index])
       };
     }
 
@@ -184,7 +178,7 @@ window.AT.smc.ote = (function () {
       swingSize: swingSize,
       swingSizeAtr: swingSize / atrVal,
       ageBars: ageBars,
-      bodyRatio: swingCandleQuality(bars, swingEnd.index)
+      bodyRatio: bodyRatio(bars[swingEnd.index])
     };
   }
 
@@ -248,7 +242,7 @@ window.AT.smc.ote = (function () {
     const swing = findSwing(bars, pivots, direction, atr, opts);
     if (!swing) return null;
 
-    if (opts.mss && !passesBosGate(bars, opts.mss, direction)) {
+    if (opts.mss && !passesBosGate(opts.mss, direction)) {
       return null;
     }
 
