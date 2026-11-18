@@ -4,10 +4,11 @@ window.AT.smc = window.AT.smc || {};
 window.AT.smc.zones = (function () {
   'use strict';
 
-  const DEFAULT_OB_ATR_MULT = 1.5;
-  const DEFAULT_FVG_MIN_ATR_MULT = 0.10;
-  const DEFAULT_FVG_MAX_AGE = 100;
+  const DEFAULT_OB_ATR_MULT = 1.8;
   const DEFAULT_OB_MAX_ZONES = 3;
+  const DEFAULT_OB_MAX_AGE_BARS = 150;
+  const DEFAULT_FVG_MIN_ATR_MULT = 0.30;
+  const DEFAULT_FVG_MAX_AGE = 60;
   const DEFAULT_FVG_MAX_ZONES = 3;
   const OB_STRENGTH_CEILING_ATR = 5;
   const FVG_STRENGTH_CEILING_ATR = 3;
@@ -20,16 +21,20 @@ window.AT.smc.zones = (function () {
     return cfg().obAtrMult != null ? cfg().obAtrMult : DEFAULT_OB_ATR_MULT;
   }
 
+  function obMaxZones() {
+    return cfg().obMaxZones != null ? cfg().obMaxZones : DEFAULT_OB_MAX_ZONES;
+  }
+
+  function obMaxAgeBars() {
+    return cfg().obMaxAgeBars != null ? cfg().obMaxAgeBars : DEFAULT_OB_MAX_AGE_BARS;
+  }
+
   function fvgMinMult() {
     return cfg().fvgMinAtrMult != null ? cfg().fvgMinAtrMult : DEFAULT_FVG_MIN_ATR_MULT;
   }
 
   function fvgMaxAge() {
     return cfg().fvgMaxAge != null ? cfg().fvgMaxAge : DEFAULT_FVG_MAX_AGE;
-  }
-
-  function obMaxZones() {
-    return cfg().obMaxZones != null ? cfg().obMaxZones : DEFAULT_OB_MAX_ZONES;
   }
 
   function fvgMaxZones() {
@@ -46,9 +51,7 @@ window.AT.smc.zones = (function () {
       return out;
     }
     if (!Array.isArray(atr) || !atr.length) return null;
-
     if (atr.length === n) return atr;
-
     const offset = n - atr.length;
     const out = new Array(n);
     for (let i = 0; i < n; i++) {
@@ -91,6 +94,7 @@ window.AT.smc.zones = (function () {
     if (!atrArr) return result;
 
     const mult = opts.obAtrMult != null ? opts.obAtrMult : obMult();
+    const maxAge = opts.maxAge != null ? opts.maxAge : obMaxAgeBars();
     const wantBoth = direction !== 1 && direction !== -1;
     const lastIdx = bars.length - 1;
 
@@ -103,6 +107,9 @@ window.AT.smc.zones = (function () {
       const magnitude = Math.abs(next.c - candle.c);
       if (magnitude < mult * a) continue;
 
+      const age = lastIdx - i;
+      if (age > maxAge) continue;
+
       if (candle.c < candle.o && next.c > next.o && (wantBoth || direction === 1)) {
         const zone = {
           index: i,
@@ -112,7 +119,7 @@ window.AT.smc.zones = (function () {
           type: 'Bullish_OB',
           createdAtr: a,
           strength: Math.min(1, magnitude / (OB_STRENGTH_CEILING_ATR * a)),
-          ageBars: lastIdx - i
+          ageBars: age
         };
         const mit = isMitigated(bars, zone, 1, i + 1);
         zone.touched = mit.touched;
@@ -130,7 +137,7 @@ window.AT.smc.zones = (function () {
           type: 'Bearish_OB',
           createdAtr: a,
           strength: Math.min(1, magnitude / (OB_STRENGTH_CEILING_ATR * a)),
-          ageBars: lastIdx - i
+          ageBars: age
         };
         const mit = isMitigated(bars, zone, -1, i + 1);
         zone.touched = mit.touched;

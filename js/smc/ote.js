@@ -7,8 +7,8 @@ window.AT.smc.ote = (function () {
   const DEFAULT_OTE_MIN = 0.618;
   const DEFAULT_OTE_MAX = 0.79;
   const DEFAULT_OTE_MID = 0.705;
-  const DEFAULT_SWING_RECENCY = 30;
-  const DEFAULT_MIN_SWING_ATR_MULT = 3;
+  const DEFAULT_SWING_RECENCY = 25;
+  const DEFAULT_MIN_SWING_ATR_MULT = 4;
   const DEFAULT_MAX_SWING_AGE = 200;
 
   function cfg() {

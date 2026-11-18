@@ -7,6 +7,7 @@ window.AT.smc.structure = (function () {
   const DEFAULT_LOOKBACK = 5;
   const DEFAULT_MSS_WINDOW = 15;
   const PIVOT_TOLERANCE_ATR_MULT = 0.10;
+  const MIN_PIVOT_STRENGTH = 0.2;
 
   function cfg() {
     return (window.AT_CONFIG && window.AT_CONFIG.smc) || {};
@@ -27,8 +28,7 @@ window.AT.smc.structure = (function () {
     for (let i = bars.length - n; i < bars.length; i++) {
       sum += Math.abs(bars[i].h - bars[i].l);
     }
-    const avgRange = sum / n;
-    return avgRange * PIVOT_TOLERANCE_ATR_MULT;
+    return (sum / n) * PIVOT_TOLERANCE_ATR_MULT;
   }
 
   function findPivots(bars, lookback) {
@@ -52,12 +52,8 @@ window.AT.smc.structure = (function () {
         const left = bars[i - j];
         const right = bars[i + j];
 
-        if (isHigh) {
-          if (left.h > b.h + tol || right.h > b.h + tol) isHigh = false;
-        }
-        if (isLow) {
-          if (left.l < b.l - tol || right.l < b.l - tol) isLow = false;
-        }
+        if (isHigh && (left.h > b.h + tol || right.h > b.h + tol)) isHigh = false;
+        if (isLow && (left.l < b.l - tol || right.l < b.l - tol)) isLow = false;
 
         if (left.h > maxNearHigh) maxNearHigh = left.h;
         if (right.h > maxNearHigh) maxNearHigh = right.h;
@@ -122,7 +118,7 @@ window.AT.smc.structure = (function () {
       }
     }
 
-    if (bullishPivot && lastClose > bullishPivot.price) {
+    if (bullishPivot && bullishPivot.strength >= MIN_PIVOT_STRENGTH && lastClose > bullishPivot.price) {
       const prevTrend = previousTrend(bars, pivots, bullishPivot.index);
       const isMSS = prevTrend === -1;
       return {
@@ -136,7 +132,7 @@ window.AT.smc.structure = (function () {
       };
     }
 
-    if (bearishPivot && lastClose < bearishPivot.price) {
+    if (bearishPivot && bearishPivot.strength >= MIN_PIVOT_STRENGTH && lastClose < bearishPivot.price) {
       const prevTrend = previousTrend(bars, pivots, bearishPivot.index);
       const isMSS = prevTrend === 1;
       return {
