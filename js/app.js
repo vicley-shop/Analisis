@@ -9,7 +9,7 @@
 
   const state = {
     symbol: 'XAUUSD',
-    tf: (CFG.timeframes && CFG.timeframes.entry) || '1h',
+    tf: (CFG.timeframes && CFG.timeframes.entry) || '15m',
     bars: {},
     ticks: {},
     analysis: null,
@@ -32,7 +32,7 @@
   let chart = null;
   let feed = null;
 
-  const MAX_SIGNAL_LOG = 200;
+  const MAX_SIGNAL_LOG = 500;
 
   function $(id) { return document.getElementById(id); }
 
@@ -65,9 +65,7 @@
       state.rafId = 0;
       const buffer = state.tickBuffer;
       state.tickBuffer = new Map();
-      buffer.forEach(function (tick) {
-        processTick(tick);
-      });
+      buffer.forEach(function (tick) { processTick(tick); });
     });
   }
 
@@ -110,10 +108,7 @@
       if (ms && state.bars[tf] && state.bars[tf].length) {
         const result = D.applyTick(state.bars[tf], ms, tick.mid, tick.ts);
         if (result === 'new') newBar = true;
-        if (result === 'gap') {
-          newBar = true;
-          refillGap(tf);
-        }
+        if (result === 'gap') { newBar = true; refillGap(tf); }
       }
     });
 
@@ -171,8 +166,8 @@
     sb.textContent = label;
     sb.className = 'session-badge ' + (open ? 'ok' : 'bad');
     sb.title = open
-      ? (a && a.highLiquidity ? 'Mercado abierto en ventana de máxima liquidez' : 'Mercado abierto, liquidez reducida')
-      : 'Mercado cerrado para este instrumento';
+      ? (a && a.highLiquidity ? 'Mercado abierto, liquidez alta' : 'Mercado abierto, liquidez normal')
+      : 'Mercado cerrado';
   }
 
   function renderGauge() {
@@ -257,13 +252,8 @@
     const bd = smc.breakdown || {};
     const order = ['mss', 'sweep', 'fvg', 'ob', 'ote', 'penalty', 'vetoed'];
     const names = {
-      mss: 'Estructura',
-      sweep: 'Sweep',
-      fvg: 'FVG',
-      ob: 'Order Block',
-      ote: 'OTE',
-      penalty: 'Penalización',
-      vetoed: 'Veto'
+      mss: 'Estructura', sweep: 'Sweep', fvg: 'FVG', ob: 'Order Block',
+      ote: 'OTE', penalty: 'Penalización', vetoed: 'Veto'
     };
 
     order.forEach(function (key) {
@@ -275,9 +265,7 @@
       lines.push('<li>' + esc(names[key] || key) + ': ' + sign + val + esc(detail) + '</li>');
     });
 
-    if (lines.length === 0) {
-      lines.push('<li class="muted">Sin componentes ponderados.</li>');
-    }
+    if (lines.length === 0) lines.push('<li class="muted">Sin componentes ponderados.</li>');
 
     if (smc.vetoes && smc.vetoes.length) {
       smc.vetoes.forEach(function (v) {
@@ -293,19 +281,10 @@
     const card = $('alertCard');
     const list = $('alertList');
 
-    if (!a) {
-      card.hidden = true;
-      list.innerHTML = '';
-      return;
-    }
+    if (!a) { card.hidden = true; list.innerHTML = ''; return; }
 
     const alerts = a.alerts || [];
-
-    if (alerts.length === 0) {
-      card.hidden = true;
-      list.innerHTML = '';
-      return;
-    }
+    if (alerts.length === 0) { card.hidden = true; list.innerHTML = ''; return; }
 
     card.hidden = false;
     list.innerHTML = alerts.map(function (alert) {
@@ -366,13 +345,8 @@
       const tf = btn.dataset.tf;
       const tfData = a && a.perTf ? a.perTf[tf] : null;
       const active = tf === state.tf;
-      if (active) {
-        btn.classList.add('active');
-        btn.setAttribute('aria-selected', 'true');
-      } else {
-        btn.classList.remove('active');
-        btn.setAttribute('aria-selected', 'false');
-      }
+      if (active) { btn.classList.add('active'); btn.setAttribute('aria-selected', 'true'); }
+      else { btn.classList.remove('active'); btn.setAttribute('aria-selected', 'false'); }
 
       const lab = btn.querySelector('.lab');
       if (!lab) return;
@@ -380,6 +354,12 @@
       if (tfData) {
         if (tfData.direction === 1) { lab.textContent = 'Alcista'; lab.className = 'lab buy'; }
         else { lab.textContent = 'Bajista'; lab.className = 'lab sell'; }
+        if (tfData.regimeValid === false) {
+          lab.textContent += ' ·';
+          lab.title = 'Régimen no válido';
+        } else {
+          lab.title = '';
+        }
       } else if (a) {
         lab.textContent = '—';
         lab.className = 'lab neutral';
@@ -425,23 +405,36 @@
     renderChart();
   }
 
+  function currentEntryPrice() {
+    const t = state.ticks[state.symbol];
+    if (t && Number.isFinite(t.mid)) return t.mid;
+    const bars = state.bars[state.tf];
+    if (bars && bars.length) return bars[bars.length - 1].c;
+    return null;
+  }
+
   function logSignalIfChanged(analysis) {
     if (!analysis) return;
     const prev = state.lastVerdictState;
     const curr = analysis.verdictState;
-    if (curr !== prev && (curr === 'buy' || curr === 'sell')) {
-      state.signalLog.push({
-        ts: Date.now(),
-        symbol: state.symbol,
-        tf: analysis.entryTf,
-        direction: analysis.overallDirection,
-        price: analysis.verdictRisk ? analysis.verdictRisk.stop : null,
-        target: analysis.verdictRisk ? analysis.verdictRisk.target : null,
-        rr: analysis.verdictRisk ? analysis.verdictRisk.rr : null,
-        score: analysis.consensusScore,
-        confidence: analysis.confidence
-      });
-      if (state.signalLog.length > MAX_SIGNAL_LOG) state.signalLog.shift();
+
+    if (curr !== prev && (curr === 'buy' || curr === 'sell') && analysis.verdictRisk) {
+      const entryPrice = currentEntryPrice();
+      if (entryPrice != null) {
+        state.signalLog.push({
+          ts: Date.now(),
+          symbol: state.symbol,
+          tf: analysis.entryTf,
+          direction: analysis.overallDirection,
+          entryPrice: entryPrice,
+          stopPrice: analysis.verdictRisk.stop,
+          targetPrice: analysis.verdictRisk.target,
+          rr: analysis.verdictRisk.rr,
+          score: analysis.consensusScore,
+          confidence: analysis.confidence
+        });
+        if (state.signalLog.length > MAX_SIGNAL_LOG) state.signalLog.shift();
+      }
     }
     state.lastVerdictState = curr;
   }
@@ -473,14 +466,15 @@
       state.smcResult = {
         score: 0,
         label: 'Sin datos',
-        reasons: ['Esperando suficientes velas históricas…'],
+        reasons: ['Esperando velas históricas…'],
         vetoes: ['Historial insuficiente'],
         breakdown: {},
         zones: { ob: null, fvg: null, ote: null, allOBs: [], allFVGs: [] },
         direction: 0,
         trend: 'Débil',
         vetoed: true,
-        grade: 'Débil'
+        grade: 'Débil',
+        activeComponents: 0
       };
     }
 
@@ -493,21 +487,12 @@
     const elapsed = Date.now() - state.lastAnalysisAt;
 
     if (force) {
-      if (state.analysisTimer) {
-        clearTimeout(state.analysisTimer);
-        state.analysisTimer = null;
-      }
+      if (state.analysisTimer) { clearTimeout(state.analysisTimer); state.analysisTimer = null; }
       runAnalysis();
       return;
     }
-
     if (state.analysisTimer) return;
-
-    if (elapsed >= throttleMs) {
-      runAnalysis();
-      return;
-    }
-
+    if (elapsed >= throttleMs) { runAnalysis(); return; }
     state.analysisTimer = setTimeout(function () {
       state.analysisTimer = null;
       runAnalysis();
@@ -642,9 +627,7 @@
       const chartCard = $('chartCard');
       if (!document.fullscreenElement) {
         if (chartCard.requestFullscreen) {
-          chartCard.requestFullscreen().catch(function (err) {
-            console.log('Fullscreen:', err.message);
-          });
+          chartCard.requestFullscreen().catch(function (err) { console.log('Fullscreen:', err.message); });
         }
       } else {
         document.exitFullscreen();
@@ -683,14 +666,8 @@
     if (!toggle) return;
     const fs = isFullscreen();
     const enabled = CFG.drawing && CFG.drawing.enabled !== false;
-
-    if (fs && enabled) {
-      toggle.hidden = false;
-    } else {
-      toggle.hidden = true;
-      closeDrawingMenu();
-      setTool('cursor');
-    }
+    if (fs && enabled) { toggle.hidden = false; }
+    else { toggle.hidden = true; closeDrawingMenu(); setTool('cursor'); }
   }
 
   function openDrawingMenu() {
@@ -718,7 +695,6 @@
 
   function setTool(tool) {
     state.currentTool = tool;
-
     const menu = $('drawingMenu');
     if (menu) {
       Array.prototype.forEach.call(menu.querySelectorAll('[data-tool]'), function (btn) {
@@ -727,29 +703,16 @@
         btn.setAttribute('aria-checked', isActive ? 'true' : 'false');
       });
     }
-
     const toggle = $('drawToggle');
     if (toggle) {
       if (tool === 'cursor') toggle.classList.remove('active');
       else toggle.classList.add('active');
     }
-
-    if (chart && typeof chart.setTool === 'function') {
-      chart.setTool(tool);
-    }
+    if (chart && typeof chart.setTool === 'function') chart.setTool(tool);
   }
 
-  function handleUndo() {
-    if (chart && typeof chart.undo === 'function') {
-      chart.undo();
-    }
-  }
-
-  function handleClear() {
-    if (chart && typeof chart.clearDrawings === 'function') {
-      chart.clearDrawings();
-    }
-  }
+  function handleUndo() { if (chart && typeof chart.undo === 'function') chart.undo(); }
+  function handleClear() { if (chart && typeof chart.clearDrawings === 'function') chart.clearDrawings(); }
 
   function initDrawingMenu() {
     const toggle = $('drawToggle');
@@ -769,15 +732,8 @@
         if (tool !== 'cursor') closeDrawingMenu();
         return;
       }
-      if (e.target.closest('#drawUndo')) {
-        handleUndo();
-        return;
-      }
-      if (e.target.closest('#drawClear')) {
-        handleClear();
-        closeDrawingMenu();
-        return;
-      }
+      if (e.target.closest('#drawUndo')) { handleUndo(); return; }
+      if (e.target.closest('#drawClear')) { handleClear(); closeDrawingMenu(); return; }
     });
 
     document.addEventListener('click', function (e) {
@@ -791,35 +747,20 @@
   function initDrawingShortcuts() {
     document.addEventListener('keydown', function (e) {
       if (!isFullscreen()) return;
-
       const tag = (e.target && e.target.tagName) || '';
       if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target && e.target.isContentEditable)) return;
 
       if (e.key === 'Escape') {
-        if (state.drawMenuOpen) {
-          closeDrawingMenu();
-          e.preventDefault();
-          return;
-        }
-        if (state.currentTool !== 'cursor') {
-          setTool('cursor');
-          e.preventDefault();
-        }
+        if (state.drawMenuOpen) { closeDrawingMenu(); e.preventDefault(); return; }
+        if (state.currentTool !== 'cursor') { setTool('cursor'); e.preventDefault(); }
         return;
       }
-
       if (e.key === 'd' || e.key === 'D') {
-        if (!e.ctrlKey && !e.metaKey && !e.altKey) {
-          e.preventDefault();
-          toggleDrawingMenu();
-        }
+        if (!e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); toggleDrawingMenu(); }
         return;
       }
-
       if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
-        e.preventDefault();
-        handleUndo();
-        return;
+        e.preventDefault(); handleUndo(); return;
       }
     });
   }
@@ -841,10 +782,7 @@
   function startFeed() {
     feed = D.createFeed(Object.keys(CFG.symbols), {
       tick: onTick,
-      status: function (mode) {
-        state.feedMode = mode;
-        renderStatus();
-      },
+      status: function (mode) { state.feedMode = mode; renderStatus(); },
       loadClient: function () {
         return new Promise(function (resolve) {
           if (window.signalR) { resolve(true); return; }
@@ -857,6 +795,71 @@
       }
     });
     feed.start();
+  }
+
+  function auditSignals() {
+    const log = state.signalLog.slice();
+    let wins = 0;
+    let losses = 0;
+    let open = 0;
+    let invalid = 0;
+    let sumRWin = 0;
+    let sumRLoss = 0;
+
+    log.forEach(function (s) {
+      if (s.entryPrice == null || s.stopPrice == null || s.targetPrice == null) { invalid++; return; }
+      const bars = state.bars[s.tf];
+      if (!bars || !bars.length) { invalid++; return; }
+
+      const after = bars.filter(function (b) { return b.t > s.ts; });
+      if (!after.length) { open++; return; }
+
+      const risk = Math.abs(s.entryPrice - s.stopPrice);
+      if (!(risk > 0)) { invalid++; return; }
+
+      const reward = Math.abs(s.targetPrice - s.entryPrice);
+      const rrReal = reward / risk;
+
+      let hitT = false;
+      let hitS = false;
+      for (let i = 0; i < after.length; i++) {
+        const b = after[i];
+        if (s.direction === 1) {
+          if (b.l <= s.stopPrice) { hitS = true; break; }
+          if (b.h >= s.targetPrice) { hitT = true; break; }
+        } else {
+          if (b.h >= s.stopPrice) { hitS = true; break; }
+          if (b.l <= s.targetPrice) { hitT = true; break; }
+        }
+      }
+
+      if (hitT) { wins++; sumRWin += rrReal; }
+      else if (hitS) { losses++; sumRLoss += 1; }
+      else { open++; }
+    });
+
+    const closed = wins + losses;
+    const winRate = closed > 0 ? (wins / closed) * 100 : 0;
+    const avgWinR = wins > 0 ? sumRWin / wins : 0;
+    const avgLossR = losses > 0 ? sumRLoss / losses : 0;
+    const expectancyR = closed > 0
+      ? (wins / closed) * avgWinR - (losses / closed) * avgLossR
+      : 0;
+    const profitFactor = sumRLoss > 0 ? (sumRWin / sumRLoss) : (sumRWin > 0 ? Infinity : 0);
+
+    return {
+      total: log.length,
+      closed: closed,
+      wins: wins,
+      losses: losses,
+      open: open,
+      invalid: invalid,
+      winRate: winRate,
+      avgWinR: avgWinR,
+      avgLossR: avgLossR,
+      expectancyR: expectancyR,
+      profitFactor: profitFactor
+    };
   }
 
   function init() {
@@ -876,14 +879,8 @@
   }
 
   function cleanup() {
-    if (state.rafId) {
-      cancelAnimationFrame(state.rafId);
-      state.rafId = 0;
-    }
-    if (chart) {
-      if (typeof chart.destroy === 'function') chart.destroy();
-      chart = null;
-    }
+    if (state.rafId) { cancelAnimationFrame(state.rafId); state.rafId = 0; }
+    if (chart) { if (typeof chart.destroy === 'function') chart.destroy(); chart = null; }
     if (feed) { feed.stop(); feed = null; }
   }
 
@@ -897,6 +894,7 @@
 
   AT.app = {
     getSignalLog: function () { return state.signalLog.slice(); },
-    getState: function () { return state; }
+    getState: function () { return state; },
+    auditSignals: auditSignals
   };
 })();

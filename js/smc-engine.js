@@ -5,7 +5,8 @@ window.AT.smcEngine = (function (I) {
   const DEFAULT_ATR_PERIOD = 14;
   const DEFAULT_HIGH_CONFLUENCE = 80;
   const DEFAULT_MEDIUM_CONFLUENCE = 50;
-  const DEFAULT_MIN_CONFIDENCE = 30;
+  const DEFAULT_MIN_CONFIDENCE = 15;
+  const DEFAULT_MIN_COMPONENTS = 2;
   const SWEEP_AGAINST_PENALTY = 15;
   const BOS_WEIGHT_FACTOR = 0.5;
   const STALE_MSS_FACTOR = 0.5;
@@ -40,6 +41,10 @@ window.AT.smcEngine = (function (I) {
     return cfg().atrPeriod || DEFAULT_ATR_PERIOD;
   }
 
+  function minComponentsForMedium() {
+    return cfg().minComponentsForMedium != null ? cfg().minComponentsForMedium : DEFAULT_MIN_COMPONENTS;
+  }
+
   function requireActiveSession() {
     const s = window.AT_CONFIG && window.AT_CONFIG.sessions;
     return !!(s && s.requireActive);
@@ -56,11 +61,13 @@ window.AT.smcEngine = (function (I) {
       label: 'Sin confluencia suficiente',
       direction: direction || 0,
       trend: 'Débil',
+      grade: 'Débil',
       reasons: [reason],
       breakdown: {},
       zones: { ob: null, fvg: null, ote: null, allOBs: [], allFVGs: [] },
       vetoes: [reason],
       vetoed: true,
+      activeComponents: 0,
       context: context
     };
   }
@@ -105,15 +112,11 @@ window.AT.smcEngine = (function (I) {
       result.breakdown.mss = {
         value: base,
         weighted: weighted,
-        reason: (mss.type || 'MSS') + ' a favor (barsSince ' + mss.barsSince + ', fresh: ' + (mss.fresh !== false) + ')'
+        reason: (mss.type || 'MSS') + ' a favor (barsSince ' + mss.barsSince + ')'
       };
-      result.reasons.push('MSS/BOS confirmado a favor (hace ' + mss.barsSince + ' velas).');
-    } else if (mss) {
-      result.breakdown.mss = { value: 0, weighted: 0, reason: 'Estructura opuesta o caducada' };
-      result.reasons.push('Estructura no alineada con la dirección analizada.');
+      result.reasons.push('Estructura a favor (' + (mss.type || 'MSS') + ').');
     } else {
-      result.breakdown.mss = { value: 0, weighted: 0, reason: 'Sin MSS/BOS reciente' };
-      result.reasons.push('Sin cambio de estructura reciente.');
+      result.breakdown.mss = { value: 0, weighted: 0, reason: 'Sin estructura alineada' };
     }
 
     const sweepFavor = sweeps.find(function (s) { return s.direction === direction; });
@@ -125,12 +128,11 @@ window.AT.smcEngine = (function (I) {
         value: w.sweep,
         weighted: weighted,
         rejectionRatio: rejection,
-        reason: 'Sweep a favor con rechazo ' + (rejection * 100).toFixed(0) + '%'
+        reason: 'Sweep a favor (rechazo ' + (rejection * 100).toFixed(0) + '%)'
       };
-      result.reasons.push('Barrido de liquidez a favor (rechazo ' + (rejection * 100).toFixed(0) + '%).');
+      result.reasons.push('Barrido de liquidez a favor.');
     } else {
       result.breakdown.sweep = { value: 0, weighted: 0, reason: 'Sin sweep a favor' };
-      result.reasons.push('Sin barrido de liquidez a favor.');
     }
 
     const sweepAgainst = sweeps.find(function (s) { return s.direction !== direction; });
@@ -141,10 +143,8 @@ window.AT.smcEngine = (function (I) {
       result.breakdown.penalty = {
         value: penalty,
         weighted: -penalty,
-        rejectionRatio: rejection,
-        reason: 'Sweep en contra con rechazo ' + (rejection * 100).toFixed(0) + '%'
+        reason: 'Sweep en contra (penalización ' + penalty.toFixed(0) + ')'
       };
-      result.vetoes.push('Sweep en contra del sesgo (penalización ' + penalty.toFixed(0) + ' pts).');
     }
 
     const activeFvg = window.AT.smc.zones.findActiveZone(fvgs, currentPrice, direction);
@@ -153,11 +153,10 @@ window.AT.smcEngine = (function (I) {
       const weighted = w.fvg * strength;
       score += weighted;
       result.zones.fvg = activeFvg;
-      result.breakdown.fvg = { value: w.fvg, weighted: weighted, strength: strength, reason: 'FVG activo' };
-      result.reasons.push('Precio dentro de un FVG (' + (strength * 100).toFixed(0) + '% de fuerza).');
+      result.breakdown.fvg = { value: w.fvg, weighted: weighted, reason: 'FVG activo' };
+      result.reasons.push('Precio en FVG.');
     } else {
-      result.breakdown.fvg = { value: 0, weighted: 0, reason: 'Precio fuera de FVG' };
-      result.reasons.push('Precio fuera de un FVG relevante.');
+      result.breakdown.fvg = { value: 0, weighted: 0, reason: 'Fuera de FVG' };
     }
 
     const activeOb = window.AT.smc.zones.findActiveZone(obs, currentPrice, direction);
@@ -166,11 +165,10 @@ window.AT.smcEngine = (function (I) {
       const weighted = w.ob * strength;
       score += weighted;
       result.zones.ob = activeOb;
-      result.breakdown.ob = { value: w.ob, weighted: weighted, strength: strength, reason: 'OB activo' };
-      result.reasons.push('Precio dentro de un Order Block (' + (strength * 100).toFixed(0) + '% de fuerza).');
+      result.breakdown.ob = { value: w.ob, weighted: weighted, reason: 'OB activo' };
+      result.reasons.push('Precio en Order Block.');
     } else {
-      result.breakdown.ob = { value: 0, weighted: 0, reason: 'Precio fuera de OB' };
-      result.reasons.push('Precio fuera de un Order Block relevante.');
+      result.breakdown.ob = { value: 0, weighted: 0, reason: 'Fuera de OB' };
     }
 
     const oteActive = ote && ote.direction === direction && ote.state === 'active';
@@ -183,26 +181,26 @@ window.AT.smcEngine = (function (I) {
       result.breakdown.ote = {
         value: w.ote,
         weighted: weighted,
-        deviation: ote.deviation,
-        state: ote.state,
-        reason: 'OTE activa (proximidad ' + (proximity * 100).toFixed(0) + '%)'
+        reason: 'OTE activa (' + (proximity * 100).toFixed(0) + '%)'
       };
-      result.reasons.push('Precio en zona OTE (' + (proximity * 100).toFixed(0) + '% del sweet spot).');
+      result.reasons.push('Precio en OTE.');
     } else if (ote && ote.direction === direction && ote.state === 'pending') {
       const weighted = w.ote * 0.3;
       score += weighted;
-      result.breakdown.ote = { value: w.ote, weighted: weighted, state: ote.state, reason: 'OTE pendiente' };
-      result.reasons.push('OTE pendiente (aún sin retroceso al sweet spot).');
+      result.breakdown.ote = { value: w.ote, weighted: weighted, reason: 'OTE pendiente' };
     } else {
-      result.breakdown.ote = { value: 0, weighted: 0, reason: 'OTE no activa para esta dirección' };
-      result.reasons.push('Precio fuera de la zona OTE.');
+      result.breakdown.ote = { value: 0, weighted: 0, reason: 'Sin OTE' };
     }
 
     score = Math.max(0, Math.min(100, score));
     result.score = score;
-
     result.zonesActive = !!(result.zones.fvg || result.zones.ob || result.zones.ote);
     result.structureActive = mssMatches;
+
+    result.activeComponents = ['mss', 'sweep', 'fvg', 'ob', 'ote'].filter(function (k) {
+      const b = result.breakdown[k];
+      return b && b.weighted > 0;
+    }).length;
 
     return result;
   }
@@ -213,7 +211,7 @@ window.AT.smcEngine = (function (I) {
     const marketOpen = ctx.marketOpen !== false;
     const sessionActive = ctx.sessionActive !== false;
     const confidence = num(ctx.confidence) ? ctx.confidence : 100;
-    const minConfidence = DEFAULT_MIN_CONFIDENCE;
+    const minComp = minComponentsForMedium();
 
     let vetoed = false;
 
@@ -227,46 +225,40 @@ window.AT.smcEngine = (function (I) {
       vetoed = true;
     }
 
-    if (confidence < minConfidence) {
-      result.vetoes.push('Confianza del consenso insuficiente (' + confidence.toFixed(0) + '%).');
+    if (confidence < DEFAULT_MIN_CONFIDENCE) {
+      result.vetoes.push('Confianza insuficiente (' + confidence.toFixed(0) + '%).');
       vetoed = true;
-    }
-
-    if (!result.structureActive) {
-      result.vetoes.push('Sin estructura (MSS/BOS) alineada.');
-    }
-
-    if (!result.zonesActive) {
-      result.vetoes.push('Sin zona de reacción (FVG/OB/OTE).');
     }
 
     if (vetoed) {
       result.score = 0;
-      result.breakdown = {
-        vetoed: { value: 0, weighted: 0, reason: 'Score vetado' }
-      };
-      const vetoReasons = result.vetoes.filter(function (v) {
-        return v.indexOf('Sweep') !== 0;
-      });
-      result.reasons = vetoReasons.map(function (v) { return '🚫 ' + v; });
-      if (vetoReasons.length === 0) {
-        result.reasons = ['🚫 Score vetado.'];
-      }
+      result.breakdown = { vetoed: { value: 0, weighted: 0, reason: 'Score vetado' } };
+      result.reasons = result.vetoes.map(function (v) { return '🚫 ' + v; });
+      result.vetoed = true;
+      result.grade = 'Débil';
+      result.label = 'Sin confluencia suficiente';
+      result.trend = 'Débil';
+      return result;
     }
 
     let grade;
     if (result.score >= th.high) {
       if (requireZoneForHigh() && !result.zonesActive) {
         grade = 'Moderada';
-        result.vetoes.push('Score alto pero sin zona de reacción: rebajado a Moderada.');
+        result.vetoes.push('Score alto sin zona: rebajado a Moderada.');
+      } else if (result.activeComponents < minComp) {
+        grade = 'Débil';
+        result.vetoes.push('Score alto con ' + result.activeComponents + ' componente(s) < ' + minComp + '.');
       } else {
         grade = 'Alta';
       }
-    } else if (result.score >= th.medium && result.structureActive) {
-      grade = 'Moderada';
     } else if (result.score >= th.medium) {
-      grade = 'Débil';
-      result.vetoes.push('Score medio sin estructura: rebajado a Débil.');
+      if (result.activeComponents < minComp) {
+        grade = 'Débil';
+        result.vetoes.push('Solo ' + result.activeComponents + ' componente(s) activo(s). Mínimo ' + minComp + ' para Moderada.');
+      } else {
+        grade = 'Moderada';
+      }
     } else {
       grade = 'Débil';
     }
@@ -282,7 +274,7 @@ window.AT.smcEngine = (function (I) {
       result.trend = 'Débil';
     }
 
-    result.vetoed = vetoed;
+    result.vetoed = false;
     result.grade = grade;
     return result;
   }
@@ -338,7 +330,7 @@ window.AT.smcEngine = (function (I) {
     let winner;
     if (resLong.score > resShort.score) winner = resLong;
     else if (resShort.score > resLong.score) winner = resShort;
-    else return emptyResult(0, 'Evaluación bidireccional sin ventaja: ningún lado supera al otro.', context);
+    else return emptyResult(0, 'Evaluación bidireccional sin ventaja.', context);
 
     return applyVetoesAndGrade(winner);
   }
