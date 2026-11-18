@@ -115,10 +115,11 @@
     const s = slow[i];
     const adxVal = adxData.adx[i];
 
-    if (!num(f) || !num(s) || !num(adxVal) || s === 0) return null;
+    if (!num(f) || !num(adxVal)) return null;
 
-    const direction = f > s ? 1 : -1;
-    const emaSepPct = Math.abs((f - s) / s) * 100;
+    const slowValid = num(s) && s !== 0;
+    const direction = slowValid ? (f > s ? 1 : -1) : 0;
+    const emaSepPct = slowValid ? Math.abs((f - s) / s) * 100 : 0;
 
     const retIdx = i - returnLb;
     const returnPct = (retIdx >= 0 && closes[retIdx] > 0)
@@ -128,7 +129,7 @@
     const adxOk = adxVal >= adxMin;
     const emaOk = emaSepPct >= emaSepMin;
     const returnOk = num(returnPct) && Math.abs(returnPct) >= returnMin && ((returnPct > 0) === (direction === 1));
-    const regimeValid = adxOk && emaOk && returnOk;
+    const regimeValid = slowValid && adxOk && emaOk && returnOk;
 
     return {
       direction: direction,
@@ -137,6 +138,7 @@
       emaSepPct: emaSepPct,
       returnPct: returnPct,
       regimeValid: regimeValid,
+      slowValid: slowValid,
       price: price,
       fast: f,
       slow: s,
@@ -196,8 +198,13 @@
         if (bars[i - j].h >= b.h || bars[i + j].h >= b.h) isHigh = false;
         if (bars[i - j].l <= b.l || bars[i + j].l <= b.l) isLow = false;
       }
-      if (isHigh) (b.h < currentPrice ? supports : resistances).push(b.h);
-      if (isLow) (b.l < currentPrice ? supports : resistances).push(b.l);
+      if (isHigh) {
+        if (b.h < currentPrice) supports.push(b.h);
+        else if (b.h > currentPrice) resistances.push(b.h);
+      }
+      if (isLow) {
+        if (b.l < currentPrice) supports.push(b.l);
+      }
     }
 
     return {
@@ -261,7 +268,7 @@
           currLow.val < prevLow.val &&
           num(rsiArr[currLow.idx]) && num(rsiArr[prevLow.idx]) &&
           rsiArr[currLow.idx] > rsiArr[prevLow.idx]) {
-        alerts.push({ type: 'danger', text: 'Divergencia alcista RSI.' });
+        alerts.push({ type: 'danger', text: 'Divergencia alcista RSI.', divergence: 1 });
       }
 
       const currHigh = findExtremeIdx(highs, currStart, i, false);
@@ -270,12 +277,13 @@
           currHigh.val > prevHigh.val &&
           num(rsiArr[currHigh.idx]) && num(rsiArr[prevHigh.idx]) &&
           rsiArr[currHigh.idx] < rsiArr[prevHigh.idx]) {
-        alerts.push({ type: 'danger', text: 'Divergencia bajista RSI.' });
+        alerts.push({ type: 'danger', text: 'Divergencia bajista RSI.', divergence: -1 });
       }
     }
 
+    const volEnabled = exCfg.enableVolumeAlert === true;
     const volLb = exCfg.volumeLookback || 20;
-    if (i > volLb) {
+    if (volEnabled && i > volLb) {
       let avgVol = 0;
       for (let j = i - 1; j >= i - volLb; j--) avgVol += vols[j];
       avgVol /= volLb;
@@ -300,18 +308,28 @@
     const minRR = riskCfg.minRR || 1.8;
     if (!num(entry) || !num(atr) || atr <= 0) return null;
 
-    let stop, target;
+    let stop, target, usedLevel = false;
     if (direction === 1) {
       const atrStop = entry - stopMult * atr;
       stop = num(support) ? Math.min(support, atrStop) : atrStop;
       const atrTarget = entry + targetMult * atr;
-      target = num(resistance) ? Math.min(resistance, atrTarget) : atrTarget;
+      if (num(resistance) && resistance > entry && resistance < atrTarget) {
+        target = resistance;
+        usedLevel = true;
+      } else {
+        target = atrTarget;
+      }
       if (target <= entry) return null;
     } else if (direction === -1) {
       const atrStop = entry + stopMult * atr;
       stop = num(resistance) ? Math.max(resistance, atrStop) : atrStop;
       const atrTarget = entry - targetMult * atr;
-      target = num(support) ? Math.max(support, atrTarget) : atrTarget;
+      if (num(support) && support < entry && support > atrTarget) {
+        target = support;
+        usedLevel = true;
+      } else {
+        target = atrTarget;
+      }
       if (target >= entry) return null;
     } else {
       return null;
@@ -322,7 +340,15 @@
     if (risk <= 0 || reward <= 0) return null;
 
     const rr = reward / risk;
-    return { stop: stop, target: target, rr: rr, valid: rr >= minRR };
+    const valid = rr >= minRR;
+    return {
+      stop: stop,
+      target: target,
+      rr: rr,
+      valid: valid,
+      usedLevel: usedLevel,
+      reason: valid ? null : ('R:R ' + rr.toFixed(2) + ':1 < ' + minRR + ':1' + (usedLevel ? ' (target recortado por nivel)' : ''))
+    };
   }
 
   function emptyResult(reason, sessionLabel, marketOpen, symbolFamily) {
@@ -333,6 +359,7 @@
       confidence: 0,
       overallDirection: 0,
       perTf: {},
+      perTfMissing: {},
       macroTrend: '—',
       macroMomentum: '—',
       macroVolatility: '—',
@@ -439,14 +466,31 @@
     if (!ctx.risk) {
       return { state: 'wait', label: 'ESPERAR', reason: 'No se pudo calcular gestión de riesgo.' };
     }
-    if (!ctx.risk.valid) {
-      return { state: 'wait', label: 'ESPERAR', reason: 'R:R ' + ctx.risk.rr.toFixed(2) + ':1 por debajo del mínimo (' + ctx.minRR + ':1).' };
-    }
 
     const isBuy = ctx.overallDirection === 1;
+    const dirWord = isBuy ? 'COMPRA' : 'VENTA';
+
+    if (ctx.consensusScore < 55) {
+      return {
+        state: 'wait',
+        label: 'PREPARAR ' + dirWord,
+        reason: 'Setup en formación (' + ctx.consensusScore.toFixed(0) + '%), esperar confirmación.'
+      };
+    }
+
+    if (!ctx.risk.valid) {
+      return {
+        state: isBuy ? 'buy' : 'sell',
+        label: dirWord + ' (R:R bajo)',
+        reason: 'Sesgo ' + (isBuy ? 'alcista' : 'bajista') + ' confirmado. ' +
+          (ctx.risk.reason || 'R:R bajo') +
+          ' · Stop ' + ctx.fmt(ctx.risk.stop) + ' · Target ' + ctx.fmt(ctx.risk.target)
+      };
+    }
+
     return {
       state: isBuy ? 'buy' : 'sell',
-      label: isBuy ? 'PREPARAR COMPRA' : 'PREPARAR VENTA',
+      label: dirWord,
       reason: 'Sesgo ' + (isBuy ? 'alcista' : 'bajista') +
         ' confirmado. ADX ' + ctx.avgAdxAligned.toFixed(1) +
         ' · R:R ' + ctx.risk.rr.toFixed(2) + ':1 · Stop ' + ctx.fmt(ctx.risk.stop) + ' · Target ' + ctx.fmt(ctx.risk.target) + '.'
@@ -473,8 +517,8 @@
     const minValidTfs = consensusCfg.minimumValidTfs || 3;
     const weightedMajority = consensusCfg.weightedMajority || 0.60;
     const adxMin = regimeCfg.adxMin || 22;
-    const dangerBlock = exCfg.dangerBlockThreshold || 2;
-    const minRR = riskCfg.minRR || 1.8;
+    const dangerBlock = exCfg.dangerBlockThreshold || 3;
+    const minRR = riskCfg.minRR || 1.5;
 
     const entryTf = opts.currentTf || (c.timeframes && c.timeframes.entry) || '15m';
     const symbol = opts.symbol || 'XAUUSD';
@@ -503,11 +547,31 @@
       }
     }
 
+    const perTfMissing = {};
+    const configuredTfs = (c.timeframes && c.timeframes.list) || keys;
+    const minBars = (c.analysis && c.analysis.minBarsPerTf) || 50;
+    for (let k = 0; k < configuredTfs.length; k++) {
+      const tf = configuredTfs[k];
+      if (perTf[tf]) continue;
+      const raw = barsByTf && barsByTf[tf];
+      if (!raw || !raw.length) {
+        perTfMissing[tf] = { reason: 'no-data' };
+      } else if (raw.length < minBars) {
+        perTfMissing[tf] = { reason: 'too-few-bars', have: raw.length, need: minBars };
+      } else {
+        perTfMissing[tf] = { reason: 'indicators-null', have: raw.length, need: minBars };
+      }
+    }
+
     if (valid.length < minValidTfs) {
-      return emptyResult(
+      const err = emptyResult(
         'Datos insuficientes: se necesitan ≥' + minValidTfs + ' temporalidades válidas (hay ' + valid.length + ').',
         sessionLabel, marketState.open, marketState.family
       );
+      err.perTfMissing = perTfMissing;
+      err.perTf = perTf;
+      err.entryTf = entryTf;
+      return err;
     }
 
     const consensus = computeConsensus(valid, thresholds, weightedMajority);
@@ -521,10 +585,10 @@
 
     const bias = biasTfs();
     const biasAgree = valid.filter(function (v) {
-      return bias.indexOf(v.tf) !== -1 && v.data.regimeValid && v.data.direction === overallDirection;
+      return bias.indexOf(v.tf) !== -1 && v.data.direction === overallDirection;
     });
     const biasOppose = valid.filter(function (v) {
-      return bias.indexOf(v.tf) !== -1 && v.data.regimeValid && overallDirection !== 0 && v.data.direction !== overallDirection;
+      return bias.indexOf(v.tf) !== -1 && overallDirection !== 0 && v.data.direction !== overallDirection;
     });
     const biasValid = overallDirection !== 0 && biasAgree.length >= 1 && biasOppose.length === 0;
 
@@ -586,7 +650,15 @@
 
     const digits = (c.symbols && c.symbols[symbol] && c.symbols[symbol].digits) || 2;
     const fmt = function (p) { return num(p) ? p.toFixed(digits) : '—'; };
-    const dangerCount = alerts.filter(function (a) { return a.type === 'danger'; }).length;
+
+    let dangerCount = 0;
+    for (let i = 0; i < alerts.length; i++) {
+      const a = alerts[i];
+      if (a.type !== 'danger') continue;
+      if (a.divergence === 1 && overallDirection === 1) continue;
+      if (a.divergence === -1 && overallDirection === -1) continue;
+      dangerCount++;
+    }
 
     const verdict = computeVerdict({
       marketOpen: marketState.open,
@@ -623,6 +695,7 @@
       confidence: confidence,
       overallDirection: overallDirection,
       perTf: perTf,
+      perTfMissing: perTfMissing,
       macroTrend: macroTrend,
       macroMomentum: macroMomentum,
       macroVolatility: macroVolatility,

@@ -18,8 +18,13 @@
 
   function cfg() { return G.AT_CONFIG || {}; }
   function feedCfg() { return cfg().feed || {}; }
+  function analysisCfg() { return cfg().analysis || {}; }
   function base() { return cfg().base || 'https://biquote.io'; }
   function feedName(sym) { return sym; }
+
+  function minBarsRequired() {
+    return analysisCfg().minBarsPerTf || 210;
+  }
 
   function toNum(x) {
     if (x == null || x === '') return null;
@@ -166,7 +171,14 @@
   }
 
   function fetchBars(symbol, tf, limit, signal) {
-    return fetchRaw(feedName(symbol), tf, limit, signal);
+    const minBars = minBarsRequired();
+    const ask = Math.max(limit || 0, minBars + 10);
+    return fetchRaw(feedName(symbol), tf, ask, signal).then(function (bars) {
+      if (bars && bars.length < minBars) {
+        console.warn('[data] ' + symbol + ' ' + tf + ': ' + bars.length + ' velas (< ' + minBars + ' requeridas). TF puede quedar inválido.');
+      }
+      return bars;
+    });
   }
 
   function normTick(raw) {
@@ -178,6 +190,8 @@
     if (mid == null || mid <= 0) return null;
     const ts = parseTs(raw.timestamp);
     const spreadRaw = toNum(raw.spread);
+    const tickVolume = toNum(raw.tickVolume);
+    const volume = toNum(raw.volume);
     return {
       symbol: String(raw.symbol).toUpperCase(),
       bid: bid != null && bid > 0 ? bid : mid,
@@ -189,7 +203,9 @@
       high: toNum(raw.high),
       low: toNum(raw.low),
       state: raw.marketState || 'open',
-      stale: !!raw.stale
+      stale: !!raw.stale,
+      tickVolume: tickVolume != null ? tickVolume : null,
+      volume: volume != null ? volume : null
     };
   }
 

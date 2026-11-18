@@ -168,10 +168,11 @@
       return;
     }
 
-    const icon = a.verdictState === 'buy' ? '▲' : a.verdictState === 'sell' ? '▼' : '◷';
+    const st = a.verdictState;
+    const icon = st === 'buy' ? '▲' : st === 'sell' ? '▼' : '◷';
     badge.innerHTML = '<span class="verdict-icon" aria-hidden="true">' + icon + '</span>' +
       '<span class="verdict-text">' + esc(a.verdictLabel) + '</span>';
-    badge.className = 'verdict-badge ' + a.verdictState;
+    badge.className = 'verdict-badge ' + st;
 
     let text = a.verdictReason || '';
     if (a.verdictRisk && a.verdictRisk.valid) {
@@ -280,7 +281,12 @@
     }
 
     const mEl = $('macroMomentum');
-    if (mEl) mEl.textContent = a.macroMomentum || '—';
+    if (mEl) {
+      mEl.textContent = a.macroMomentum || '—';
+      mEl.className = 'metric-val';
+      if (a.macroMomentum === 'Alcista') mEl.classList.add('up');
+      else if (a.macroMomentum === 'Bajista') mEl.classList.add('down');
+    }
 
     const vEl = $('macroVolatility');
     if (vEl) vEl.textContent = a.macroVolatility || '—';
@@ -342,9 +348,23 @@
         } else {
           lab.title = '';
         }
+      } else if (a && a.perTfMissing && a.perTfMissing[tf]) {
+        const m = a.perTfMissing[tf];
+        if (m.reason === 'too-few-bars') {
+          lab.textContent = 'Sin datos ' + m.have + '/' + m.need;
+          lab.title = 'Historial insuficiente';
+        } else if (m.reason === 'no-data') {
+          lab.textContent = 'Sin datos';
+          lab.title = 'API no devolvió velas';
+        } else {
+          lab.textContent = 'N/D';
+          lab.title = 'Indicadores no calculables';
+        }
+        lab.className = 'lab neutral';
       } else if (a) {
         lab.textContent = '—';
         lab.className = 'lab neutral';
+        lab.title = '';
       } else {
         lab.textContent = '…';
         lab.className = 'lab neutral';
@@ -378,13 +398,28 @@
   function computeRenderHash() {
     const a = state.analysis;
     if (!a) return 'none';
+    let tfSig = '';
+    if (a.perTf) {
+      const ks = Object.keys(a.perTf).sort();
+      for (let i = 0; i < ks.length; i++) {
+        const d = a.perTf[ks[i]];
+        tfSig += ks[i] + ':' + d.direction + ',' + (d.regimeValid ? 1 : 0) + ';';
+      }
+    }
     return [
       state.symbol,
       state.tf,
       a.verdictState,
       a.consensusLabel,
-      Math.round(a.consensusScore || 0),
-      Math.round(a.confidence || 0),
+      Math.round((a.consensusScore || 0) * 10),
+      Math.round((a.confidence || 0) * 10),
+      a.macroMomentum || '',
+      a.macroTrend || '',
+      a.macroVolatility || '',
+      Math.round((a.avgAdxAligned || 0) * 10),
+      Math.round((a.avgAdxOpposed || 0) * 10),
+      a.entryTf || '',
+      tfSig,
       state.smcResult ? Math.round(state.smcResult.score || 0) : 0,
       state.smcResult ? state.smcResult.grade || '' : '',
       (a.alerts || []).length,
@@ -393,13 +428,6 @@
   }
 
   function renderAll(force) {
-    const hash = computeRenderHash();
-    if (!force && hash === state.lastRenderHash) {
-      renderPrice();
-      return;
-    }
-    state.lastRenderHash = hash;
-
     renderStatus();
     renderPrice();
     renderGauge();
@@ -409,7 +437,12 @@
     renderMetrics();
     renderMtf();
     renderConclusion();
-    renderChart();
+
+    const hash = computeRenderHash();
+    if (force || hash !== state.lastRenderHash) {
+      state.lastRenderHash = hash;
+      renderChart();
+    }
   }
 
   function currentEntryPrice() {
@@ -455,18 +488,20 @@
 
   function updateBarsFromTick(tick) {
     const tfMs = D.TF;
-    let newBar = false;
+    let changed = false;
+    const vol = Number.isFinite(tick.tickVolume) ? tick.tickVolume
+      : (Number.isFinite(tick.volume) ? tick.volume : undefined);
     const tfs = Object.keys(state.bars);
     for (let i = 0; i < tfs.length; i++) {
       const tf = tfs[i];
       const ms = tfMs[tf];
       if (ms && state.bars[tf] && state.bars[tf].length) {
-        const result = D.applyTick(state.bars[tf], ms, tick.mid, tick.ts);
-        if (result === 'new') newBar = true;
-        if (result === 'gap') { newBar = true; refillGap(tf); }
+        const result = D.applyTick(state.bars[tf], ms, tick.mid, tick.ts, vol);
+        if (result) changed = true;
+        if (result === 'gap') refillGap(tf);
       }
     }
-    return newBar;
+    return changed;
   }
 
   function refillGap(tf) {
@@ -499,7 +534,16 @@
 
     if (tick.stale) return;
 
-    updateBarsFromTick(tick);
+    const changed = updateBarsFromTick(tick);
+
+    if (changed && chart) {
+      const inst = CFG.symbols[state.symbol];
+      const bars = state.bars[state.tf] || [];
+      if (inst && bars.length) {
+        chart.setData(bars, { tf: state.tf, digits: inst.digits, symbol: state.symbol });
+      }
+    }
+
     updateSymbolBarPrices();
     renderPrice();
   }

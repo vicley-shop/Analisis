@@ -29,13 +29,13 @@ window.AT_CONFIG = {
 
   regime: {
     adxPeriod: 14,
-    adxMin: 22,
-    adxStrong: 28,
+    adxMin: 20,
+    adxStrong: 25,
     emaFast: 50,
     emaSlow: 200,
-    emaSeparationMinPct: 0.5,
+    emaSeparationMinPct: 0.15,
     returnLookback: 30,
-    returnMinPct: 0.2
+    returnMinPct: 0.1
   },
 
   consensus: {
@@ -50,7 +50,7 @@ window.AT_CONFIG = {
     atrPeriod: 14,
     atrStopMult: 1.5,
     atrTargetMult: 3.0,
-    minRR: 1.8,
+    minRR: 1.5,
     maxRiskPct: 1.0,
     maxSignalAgeBars: 8
   },
@@ -66,7 +66,8 @@ window.AT_CONFIG = {
     divergenceLookback: 15,
     divergenceGap: 1,
     consensusOverextension: 95,
-    dangerBlockThreshold: 2
+    dangerBlockThreshold: 3,
+    enableVolumeAlert: false
   },
 
   smc: {
@@ -180,7 +181,7 @@ window.AT_CONFIG = {
   },
 
   analysis: {
-    minBarsPerTf: 50,
+    minBarsPerTf: 210,
     useClosedCandlesOnly: true
   }
 };
