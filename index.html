@@ -5,7 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="dark">
   <meta name="theme-color" content="#080B10">
+  <meta name="description" content="Quantum Desk PRO — Terminal institucional de análisis técnico, SMC y señales en vivo.">
   <title>Quantum Desk PRO — Terminal Institucional &amp; SMC</title>
+
+  <!-- FIX #27: favicon inline (data URI SVG) para evitar 404 en consola -->
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%233B82F6'/%3E%3Ctext x='16' y='22' font-family='monospace' font-size='18' font-weight='800' fill='%23080B10' text-anchor='middle'%3EQ%3C/text%3E%3C/svg%3E">
+
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -13,45 +18,74 @@
 </head>
 <body>
 
+<!-- FIX #10: noscript para app 100% dependiente de JS -->
+<noscript>
+  <div style="padding:2rem;text-align:center;color:#94A3B8;font-family:system-ui,sans-serif">
+    <strong style="color:#F8FAFC;display:block;margin-bottom:.5rem">JavaScript requerido</strong>
+    Quantum Desk PRO necesita JavaScript habilitado para mostrar datos en vivo.
+  </div>
+</noscript>
+
+<!-- ═══════════════════════════════════════════════════════════
+     TOPBAR
+     ═══════════════════════════════════════════════════════════ -->
 <header class="topbar">
   <div class="topbar-inner">
     <div class="brand">
-      <div class="brand-logo">Q</div>
+      <div class="brand-logo" aria-hidden="true">Q</div>
       <div class="brand-info">
         <span class="brand-title">QUANTUM DESK</span>
         <span class="brand-tag">INSTITUTIONAL</span>
       </div>
     </div>
 
-    <nav class="ticker-strip" id="symbolBar" aria-label="Instrumentos"></nav>
+    <!-- FIX #11: aria-busy hasta que app.js lo pueble -->
+    <nav class="ticker-strip" id="symbolBar" aria-label="Selector de instrumentos" aria-busy="true"></nav>
 
     <div class="topbar-actions">
-      <button type="button" id="soundToggle" class="btn-icon active" title="Alertas sonoras activadas" aria-pressed="true">🔔</button>
+      <!-- FIX #14: emoji en span aria-hidden para evitar doble lectura -->
+      <button
+        type="button"
+        id="soundToggle"
+        class="btn-icon active"
+        title="Alertas sonoras activadas"
+        aria-label="Desactivar alertas sonoras"
+        aria-pressed="true"><span aria-hidden="true">🔔</span></button>
+      <!-- FIX #12: role=status ya implica aria-live=polite, se eliminó redundancia -->
       <div class="conn-pill" role="status">
-        <span class="conn-dot" id="statusDot"></span>
+        <span class="conn-dot" id="statusDot" aria-hidden="true"></span>
         <span id="statusText">Iniciando…</span>
       </div>
     </div>
   </div>
 </header>
 
-<div id="signalBanner" class="signal-banner" hidden role="alert" aria-live="assertive">
+<!-- ═══════════════════════════════════════════════════════════
+     BANNER DE SEÑAL
+     ═══════════════════════════════════════════════════════════ -->
+<!-- FIX #12: role=alert ya implica aria-live=assertive, se eliminó redundancia -->
+<div id="signalBanner" class="signal-banner" hidden role="alert">
   <div class="signal-banner-inner">
-    <span class="signal-pulse"></span>
+    <span class="signal-pulse" aria-hidden="true"></span>
     <strong id="signalBannerTitle">SEÑAL DETECTADA</strong>
     <span id="signalBannerDetail"></span>
-    <button type="button" id="signalBannerClose" class="btn-close" aria-label="Cerrar alerta">✕</button>
+    <!-- FIX #14: emoji ✕ aislado -->
+    <button type="button" id="signalBannerClose" class="btn-close" aria-label="Cerrar alerta de señal"><span aria-hidden="true">✕</span></button>
   </div>
 </div>
 
+<!-- ═══════════════════════════════════════════════════════════
+     WORKSPACE
+     ═══════════════════════════════════════════════════════════ -->
 <main class="workspace">
 
-  <!-- Fila 1: Precio + Veredicto + Medidor -->
-  <section class="panel panel-price">
+  <!-- ── Fila 1 · Cotización en vivo ───────────────────────── -->
+  <section class="panel panel-price" aria-labelledby="priceTitle">
     <div class="panel-head">
-      <span class="panel-title">COTIZACIÓN EN VIVO</span>
+      <span class="panel-title" id="priceTitle">COTIZACIÓN EN VIVO</span>
       <span id="sessionBadge" class="badge neutral">—</span>
     </div>
+    <!-- FIX #2: quitado aria-live=polite de un feed de alta frecuencia (satura lectores de pantalla) -->
     <div class="price-main" id="priceBig">—</div>
     <div class="price-footer">
       <span id="priceChg" class="price-chg">—</span>
@@ -59,18 +93,20 @@
     </div>
   </section>
 
-  <section class="panel panel-verdict" id="verdictCard">
+  <!-- ── Fila 1 · Motor de ejecución ───────────────────────── -->
+  <section class="panel panel-verdict" id="verdictCard" aria-labelledby="verdictTitle">
     <div class="panel-head">
-      <span class="panel-title">MOTOR DE EJECUCIÓN Y ENTRADA</span>
+      <span class="panel-title" id="verdictTitle">MOTOR DE EJECUCIÓN Y ENTRADA</span>
       <span id="verdictConfidence" class="mono-tag">Confianza: 0%</span>
     </div>
-    <div class="verdict-body">
+    <!-- FIX #12: aria-atomic=false es el valor por defecto, se eliminó -->
+    <div class="verdict-body" role="status" aria-live="polite">
       <div id="verdictBadge" class="signal-pill wait">
-        <span class="signal-icon">◷</span>
+        <span class="signal-icon" aria-hidden="true">◷</span>
         <span class="signal-label">ESPERANDO SETUP</span>
       </div>
       <div class="verdict-details">
-        <p id="verdictReason" class="verdict-reason">Analizando estructura y confluencia multi-temporal...</p>
+        <p id="verdictReason" class="verdict-reason">Analizando estructura y confluencia multi-temporal…</p>
         <div id="tradeLevels" class="trade-levels" hidden>
           <div class="level-box"><span>ENTRADA</span><strong id="lvlEntry">—</strong></div>
           <div class="level-box stop"><span>STOP LOSS</span><strong id="lvlStop">—</strong></div>
@@ -81,12 +117,13 @@
     </div>
   </section>
 
-  <section class="panel panel-gauge">
+  <!-- ── Fila 1 · Medidor de consenso MTF ──────────────────── -->
+  <section class="panel panel-gauge" aria-labelledby="gaugeTitle">
     <div class="panel-head">
-      <span class="panel-title">CONSENSO MTF</span>
+      <span class="panel-title" id="gaugeTitle">CONSENSO MTF</span>
       <span id="gaugeScore" class="mono-tag">0%</span>
     </div>
-    <svg class="gauge-svg" viewBox="0 0 200 110" aria-hidden="true">
+    <svg class="gauge-svg" viewBox="0 0 200 110" role="img" aria-labelledby="gaugeTitle gaugeLabel">
       <path class="arc arc-1" d="M 20 100 A 80 80 0 0 1 35.28 52.98"/>
       <path class="arc arc-2" d="M 35.28 52.98 A 80 80 0 0 1 75.28 23.92"/>
       <path class="arc arc-3" d="M 75.28 23.92 A 80 80 0 0 1 124.72 23.92"/>
@@ -97,11 +134,12 @@
         <circle cx="100" cy="100" r="5" class="needle-hub"/>
       </g>
     </svg>
-    <div id="gaugeLabel" class="gauge-text neutral">NEUTRO</div>
+    <!-- FIX #31: gaugeLabel con aria-live=polite para que AT anuncie cambio de veredicto -->
+    <div id="gaugeLabel" class="gauge-text neutral" aria-live="polite">NEUTRO</div>
   </section>
 
-  <!-- Fila 2: Métricas Cuantitativas -->
-  <section class="kpi-strip">
+  <!-- ── Fila 2 · KPIs cuantitativos ───────────────────────── -->
+  <section class="kpi-strip" aria-label="Métricas cuantitativas">
     <div class="kpi-card">
       <span class="kpi-label">TENDENCIA (ADX)</span>
       <strong id="macroTrend" class="kpi-value">—</strong>
@@ -120,65 +158,74 @@
     </div>
   </section>
 
-  <!-- Fila 3: Gráfico Principal -->
-  <section class="panel panel-chart" id="chartCard">
+  <!-- ── Fila 3 · Gráfico principal ────────────────────────── -->
+  <!-- FIX #3: chartTitle ya no está hidden: es el nombre accesible de la sección Y visible -->
+  <section class="panel panel-chart" id="chartCard" aria-labelledby="chartTitle">
     <div class="chart-toolbar">
-      <div class="tf-selector" id="mtf" role="tablist" aria-label="Temporalidades"></div>
+      <span class="panel-title" id="chartTitle">GRÁFICO PRINCIPAL</span>
+      <!-- FIX #11: aria-busy hasta que app.js lo pueble -->
+      <div class="tf-selector" id="mtf" role="tablist" aria-label="Seleccionar temporalidad" aria-orientation="horizontal" aria-busy="true"></div>
       <div id="legend" class="ohlc-legend">Pase el cursor sobre el gráfico</div>
       <div class="chart-controls">
-        <button type="button" id="zoomOut" title="Alejar">−</button>
-        <button type="button" id="zoomIn" title="Acercar">+</button>
-        <button type="button" id="zoomReset" title="Restaurar vista">⟲</button>
-        <button type="button" id="drawToggle" title="Herramientas de dibujo">✏️</button>
-        <button type="button" id="chartFullscreen" title="Pantalla completa">⛶</button>
+        <!-- FIX #14: símbolos en span aria-hidden -->
+        <button type="button" id="zoomOut" title="Alejar" aria-label="Alejar zoom"><span aria-hidden="true">−</span></button>
+        <button type="button" id="zoomIn" title="Acercar" aria-label="Acercar zoom"><span aria-hidden="true">+</span></button>
+        <button type="button" id="zoomReset" title="Restaurar vista" aria-label="Restaurar vista del gráfico"><span aria-hidden="true">⟲</span></button>
+        <button type="button" id="drawToggle" title="Herramientas de dibujo" aria-label="Abrir herramientas de dibujo" aria-haspopup="true" aria-expanded="false" aria-controls="drawingMenu"><span aria-hidden="true">✏️</span></button>
+        <button type="button" id="chartFullscreen" title="Pantalla completa" aria-label="Alternar pantalla completa"><span aria-hidden="true">⛶</span></button>
       </div>
     </div>
 
-    <div class="drawing-popover" id="drawingMenu" hidden>
-      <button type="button" class="draw-item active" data-tool="cursor">↖ Cursor</button>
-      <button type="button" class="draw-item" data-tool="line">╱ Línea Tendencia</button>
-      <button type="button" class="draw-item" data-tool="h">─ Nivel Horizontal</button>
-      <button type="button" class="draw-item" data-tool="rect">▭ Zona / Caja</button>
-      <button type="button" class="draw-item" data-tool="fib">π Fibonacci</button>
-      <hr>
-      <button type="button" class="draw-item" id="drawUndo">↶ Deshacer</button>
-      <button type="button" class="draw-item danger" id="drawClear">🗑 Limpiar Todo</button>
+    <div class="drawing-popover" id="drawingMenu" hidden role="menu" aria-label="Herramientas de dibujo">
+      <button type="button" class="draw-item active" data-tool="cursor" role="menuitemradio" aria-checked="true"><span aria-hidden="true">↖</span> Cursor</button>
+      <button type="button" class="draw-item" data-tool="line" role="menuitemradio" aria-checked="false"><span aria-hidden="true">╱</span> Línea Tendencia</button>
+      <button type="button" class="draw-item" data-tool="h" role="menuitemradio" aria-checked="false"><span aria-hidden="true">─</span> Nivel Horizontal</button>
+      <button type="button" class="draw-item" data-tool="rect" role="menuitemradio" aria-checked="false"><span aria-hidden="true">▭</span> Zona / Caja</button>
+      <button type="button" class="draw-item" data-tool="fib" role="menuitemradio" aria-checked="false"><span aria-hidden="true">π</span> Fibonacci</button>
+      <!-- FIX #36: hr con role=separator explícito dentro de role=menu -->
+      <hr role="separator">
+      <button type="button" class="draw-item" id="drawUndo" role="menuitem"><span aria-hidden="true">↶</span> Deshacer</button>
+      <button type="button" class="draw-item danger" id="drawClear" role="menuitem"><span aria-hidden="true">🗑</span> Limpiar Todo</button>
     </div>
 
-    <canvas id="chart"></canvas>
+    <canvas id="chart" aria-label="Gráfico de velas japonesas">
+      Tu navegador no soporta &lt;canvas&gt;. Actualiza a un navegador moderno para ver el gráfico.
+    </canvas>
 
     <div class="chart-footer">
-      <div class="ema-keys">
-        <span><i class="dot-ema e20"></i>EMA 20</span>
-        <span><i class="dot-ema e50"></i>EMA 50</span>
-        <span><i class="dot-ema e200"></i>EMA 200</span>
+      <div class="ema-keys" aria-label="Medias móviles exponenciales">
+        <span><i class="dot-ema e20" aria-hidden="true"></i>EMA 20</span>
+        <span><i class="dot-ema e50" aria-hidden="true"></i>EMA 50</span>
+        <span><i class="dot-ema e200" aria-hidden="true"></i>EMA 200</span>
       </div>
-      <div class="zone-keys">
-        <span><i class="box-zone ob"></i>Order Block</span>
-        <span><i class="box-zone fvg"></i>Fair Value Gap</span>
-        <span><i class="box-zone ote"></i>Zona OTE</span>
+      <div class="zone-keys" aria-label="Zonas institucionales">
+        <span><i class="box-zone ob" aria-hidden="true"></i>Order Block</span>
+        <span><i class="box-zone fvg" aria-hidden="true"></i>Fair Value Gap</span>
+        <span><i class="box-zone ote" aria-hidden="true"></i>Zona OTE</span>
       </div>
     </div>
   </section>
 
-  <!-- Fila 4: SMC + Historial de Señales -->
-  <section class="panel panel-smc">
+  <!-- ── Fila 4 · SMC ──────────────────────────────────────── -->
+  <section class="panel panel-smc" aria-labelledby="smcTitle">
     <div class="panel-head">
-      <span class="panel-title">CONFLUENCIA INSTITUCIONAL (SMC)</span>
+      <span class="panel-title" id="smcTitle">CONFLUENCIA INSTITUCIONAL (SMC)</span>
       <strong id="smcScore" class="smc-pct">0%</strong>
     </div>
-    <div class="progress-track">
+    <div class="progress-track" role="progressbar" aria-labelledby="smcTitle" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="smcProgress">
       <div id="smcBarFill" class="progress-fill" style="width:0%"></div>
     </div>
-    <ul id="smcReasons" class="smc-list">
+    <!-- FIX #12: aria-atomic=false era redundante -->
+    <ul id="smcReasons" class="smc-list" aria-live="polite">
       <li class="muted">Esperando cálculo institucional…</li>
     </ul>
   </section>
 
-  <section class="panel panel-log">
+  <!-- ── Fila 4 · Bitácora ─────────────────────────────────── -->
+  <section class="panel panel-log" aria-labelledby="logTitle">
     <div class="panel-head">
-      <span class="panel-title">BITÁCORA DE SEÑALES EN VIVO</span>
-      <span id="signalCount" class="mono-tag">0 señales</span>
+      <span class="panel-title" id="logTitle">BITÁCORA DE SEÑALES EN VIVO</span>
+      <span id="signalCount" class="mono-tag" aria-live="polite">0 señales</span>
     </div>
     <div class="log-container">
       <ul id="signalHistory" class="signal-history">
