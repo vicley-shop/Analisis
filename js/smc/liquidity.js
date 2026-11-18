@@ -54,7 +54,7 @@ window.AT.smc.liquidity = (function () {
       : (bar.h - bar.c) / range;
   }
 
-  function detectBullishSweep(bars, pivot, atr, opts) {
+  function detectSweep(bars, pivot, atr, direction, opts) {
     const minPenetration = atr * (opts.minPenetration != null ? opts.minPenetration : sweepMinMult());
     const maxPenetration = atr * (opts.maxPenetration != null ? opts.maxPenetration : sweepMaxMult());
     const window = opts.window != null ? opts.window : sweepWindowDefault();
@@ -64,14 +64,27 @@ window.AT.smc.liquidity = (function () {
 
     for (let i = lastIdx; i >= startIdx; i--) {
       const bar = bars[i];
-      const penetration = pivot.price - bar.l;
+
+      let penetration;
+      let closeOk;
+
+      if (direction === 1) {
+        penetration = pivot.price - bar.l;
+        closeOk = bar.c > pivot.price;
+      } else {
+        penetration = bar.h - pivot.price;
+        closeOk = bar.c < pivot.price;
+      }
+
       if (penetration < minPenetration) continue;
       if (penetration > maxPenetration) continue;
-      if (bar.c <= pivot.price) continue;
-      const rej = rejectionRatio(bar, 1);
+      if (!closeOk) continue;
+
+      const rej = rejectionRatio(bar, direction);
       if (rej < rejectionMin) continue;
+
       return {
-        direction: 1,
+        direction: direction,
         level: pivot.price,
         index: i,
         pivotIndex: pivot.index,
@@ -79,42 +92,11 @@ window.AT.smc.liquidity = (function () {
         penetration: penetration,
         penetrationAtr: atr > 0 ? penetration / atr : 0,
         rejectionRatio: rej,
-        type: 'Bullish_Sweep',
+        type: direction === 1 ? 'Bullish_Sweep' : 'Bearish_Sweep',
         valid: true
       };
     }
-    return null;
-  }
 
-  function detectBearishSweep(bars, pivot, atr, opts) {
-    const minPenetration = atr * (opts.minPenetration != null ? opts.minPenetration : sweepMinMult());
-    const maxPenetration = atr * (opts.maxPenetration != null ? opts.maxPenetration : sweepMaxMult());
-    const window = opts.window != null ? opts.window : sweepWindowDefault();
-    const rejectionMin = opts.rejectionMin != null ? opts.rejectionMin : sweepRejectionMin();
-    const lastIdx = bars.length - 1;
-    const startIdx = Math.max(pivot.index + 1, lastIdx - window + 1);
-
-    for (let i = lastIdx; i >= startIdx; i--) {
-      const bar = bars[i];
-      const penetration = bar.h - pivot.price;
-      if (penetration < minPenetration) continue;
-      if (penetration > maxPenetration) continue;
-      if (bar.c >= pivot.price) continue;
-      const rej = rejectionRatio(bar, -1);
-      if (rej < rejectionMin) continue;
-      return {
-        direction: -1,
-        level: pivot.price,
-        index: i,
-        pivotIndex: pivot.index,
-        barsSince: lastIdx - i,
-        penetration: penetration,
-        penetrationAtr: atr > 0 ? penetration / atr : 0,
-        rejectionRatio: rej,
-        type: 'Bearish_Sweep',
-        valid: true
-      };
-    }
     return null;
   }
 
@@ -137,7 +119,7 @@ window.AT.smc.liquidity = (function () {
       for (let i = pivots.lows.length - 1; i >= start; i--) {
         const pivot = pivots.lows[i];
         if (pivot.index >= bars.length - 1) continue;
-        const sweep = detectBullishSweep(bars, pivot, atrVal, opts);
+        const sweep = detectSweep(bars, pivot, atrVal, 1, opts);
         if (sweep) { sweeps.push(sweep); break; }
       }
     }
@@ -147,7 +129,7 @@ window.AT.smc.liquidity = (function () {
       for (let i = pivots.highs.length - 1; i >= start; i--) {
         const pivot = pivots.highs[i];
         if (pivot.index >= bars.length - 1) continue;
-        const sweep = detectBearishSweep(bars, pivot, atrVal, opts);
+        const sweep = detectSweep(bars, pivot, atrVal, -1, opts);
         if (sweep) { sweeps.push(sweep); break; }
       }
     }
@@ -163,6 +145,7 @@ window.AT.smc.liquidity = (function () {
     if (!(tolerance > 0) || !pivots) return result;
 
     function group(list) {
+      if (!list || !list.length) return [];
       const groups = [];
       for (let i = 0; i < list.length; i++) {
         const p = list[i];
@@ -184,8 +167,8 @@ window.AT.smc.liquidity = (function () {
       return groups.filter(function (g) { return g.count >= 2; });
     }
 
-    if (pivots.highs && pivots.highs.length) result.highs = group(pivots.highs);
-    if (pivots.lows && pivots.lows.length) result.lows = group(pivots.lows);
+    result.highs = group(pivots.highs);
+    result.lows = group(pivots.lows);
     return result;
   }
 

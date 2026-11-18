@@ -10,6 +10,7 @@ window.AT.smc.ote = (function () {
   const DEFAULT_SWING_RECENCY = 25;
   const DEFAULT_MIN_SWING_ATR_MULT = 4;
   const DEFAULT_MAX_SWING_AGE = 200;
+  const DEFAULT_SWING_BODY_RATIO_MIN = 0.5;
 
   function cfg() {
     return (window.AT_CONFIG && window.AT_CONFIG.smc) || {};
@@ -37,6 +38,18 @@ window.AT.smc.ote = (function () {
 
   function maxSwingAge() {
     return cfg().maxSwingAge != null ? cfg().maxSwingAge : DEFAULT_MAX_SWING_AGE;
+  }
+
+  function swingBodyRatioMin() {
+    return cfg().swingBodyRatioMin != null ? cfg().swingBodyRatioMin : DEFAULT_SWING_BODY_RATIO_MIN;
+  }
+
+  function requireBosForOte() {
+    return cfg().requireBosForOte === true;
+  }
+
+  function requirePremiumDiscount() {
+    return cfg().requirePremiumDiscount === true;
   }
 
   function resolveAtr(atr) {
@@ -70,6 +83,40 @@ window.AT.smc.ote = (function () {
     return best;
   }
 
+  function bodyRatio(bar) {
+    if (!bar) return 0;
+    const range = bar.h - bar.l;
+    if (!(range > 0)) return 0;
+    return Math.abs(bar.c - bar.o) / range;
+  }
+
+  function swingCandleQuality(bars, pivotIndex) {
+    const bar = bars[pivotIndex];
+    if (!bar) return 0;
+    return bodyRatio(bar);
+  }
+
+  function passesSwingQuality(bars, swingEndPivot) {
+    const bar = bars[swingEndPivot.index];
+    if (!bar) return false;
+    return bodyRatio(bar) >= swingBodyRatioMin();
+  }
+
+  function passesBosGate(bars, mss, direction) {
+    if (!requireBosForOte()) return true;
+    if (!mss || mss.direction !== direction) return false;
+    return true;
+  }
+
+  function passesPremiumDiscountGate(swingStart, swingEnd, direction) {
+    if (!requirePremiumDiscount()) return true;
+    const range = Math.abs(swingEnd - swingStart);
+    if (!(range > 0)) return true;
+    const mid = (swingEnd + swingStart) / 2;
+    if (direction === 1) return swingStart < mid;
+    return swingStart > mid;
+  }
+
   function findSwing(bars, pivots, direction, atr, opts) {
     opts = opts || {};
     if (!bars || bars.length < 10) return null;
@@ -84,21 +131,26 @@ window.AT.smc.ote = (function () {
     const recency = opts.swingRecency != null ? opts.swingRecency : swingRecency();
     const minMult = opts.minSwingAtrMult != null ? opts.minSwingAtrMult : minSwingAtrMult();
     const maxAge = opts.maxSwingAge != null ? opts.maxSwingAge : maxSwingAge();
-
     const recentStart = Math.max(0, lastIdx - recency);
 
+    let swingStart = null;
+    let swingEnd = null;
+    let swingSize = 0;
+
     if (direction === 1) {
-      const swingEnd = findExtremeHigh(pivots, recentStart, lastIdx);
+      swingEnd = findExtremeHigh(pivots, recentStart, lastIdx);
       if (!swingEnd) return null;
       const ageBars = lastIdx - swingEnd.index;
       if (ageBars > recency) return null;
+      if (!passesSwingQuality(bars, swingEnd)) return null;
 
       const lowSearchStart = Math.max(0, swingEnd.index - maxAge);
-      const swingStart = findExtremeLow(pivots, lowSearchStart, swingEnd.index - 1);
+      swingStart = findExtremeLow(pivots, lowSearchStart, swingEnd.index - 1);
       if (!swingStart) return null;
 
-      const swingSize = swingEnd.price - swingStart.price;
+      swingSize = swingEnd.price - swingStart.price;
       if (swingSize < minMult * atrVal) return null;
+      if (!passesPremiumDiscountGate(swingStart.price, swingEnd.price, 1)) return null;
 
       return {
         direction: 1,
@@ -106,21 +158,24 @@ window.AT.smc.ote = (function () {
         swingEnd: swingEnd,
         swingSize: swingSize,
         swingSizeAtr: swingSize / atrVal,
-        ageBars: ageBars
+        ageBars: ageBars,
+        bodyRatio: swingCandleQuality(bars, swingEnd.index)
       };
     }
 
-    const swingEnd = findExtremeLow(pivots, recentStart, lastIdx);
+    swingEnd = findExtremeLow(pivots, recentStart, lastIdx);
     if (!swingEnd) return null;
     const ageBars = lastIdx - swingEnd.index;
     if (ageBars > recency) return null;
+    if (!passesSwingQuality(bars, swingEnd)) return null;
 
     const highSearchStart = Math.max(0, swingEnd.index - maxAge);
-    const swingStart = findExtremeHigh(pivots, highSearchStart, swingEnd.index - 1);
+    swingStart = findExtremeHigh(pivots, highSearchStart, swingEnd.index - 1);
     if (!swingStart) return null;
 
-    const swingSize = swingStart.price - swingEnd.price;
+    swingSize = swingStart.price - swingEnd.price;
     if (swingSize < minMult * atrVal) return null;
+    if (!passesPremiumDiscountGate(swingStart.price, swingEnd.price, -1)) return null;
 
     return {
       direction: -1,
@@ -128,7 +183,8 @@ window.AT.smc.ote = (function () {
       swingEnd: swingEnd,
       swingSize: swingSize,
       swingSizeAtr: swingSize / atrVal,
-      ageBars: ageBars
+      ageBars: ageBars,
+      bodyRatio: swingCandleQuality(bars, swingEnd.index)
     };
   }
 
@@ -188,12 +244,17 @@ window.AT.smc.ote = (function () {
   }
 
   function calculateOTE(bars, pivots, direction, atr, opts) {
+    opts = opts || {};
     const swing = findSwing(bars, pivots, direction, atr, opts);
     if (!swing) return null;
 
+    if (opts.mss && !passesBosGate(bars, opts.mss, direction)) {
+      return null;
+    }
+
     const currentPrice = bars[bars.length - 1].c;
 
-    return buildOTE(
+    const ote = buildOTE(
       swing.swingStart.price,
       swing.swingEnd.price,
       swing.direction,
@@ -203,6 +264,12 @@ window.AT.smc.ote = (function () {
       swing.swingSizeAtr,
       currentPrice
     );
+
+    if (ote) {
+      ote.bodyRatio = swing.bodyRatio;
+    }
+
+    return ote;
   }
 
   return {
