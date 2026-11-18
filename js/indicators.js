@@ -155,6 +155,27 @@
     };
   }
 
+  function computeDx(high, low, close, prevHigh, prevLow, prevClose) {
+    const upMove = high - prevHigh;
+    const downMove = prevLow - low;
+    const plusDM = (upMove > downMove && upMove > 0) ? upMove : 0;
+    const minusDM = (downMove > upMove && downMove > 0) ? downMove : 0;
+    const trueRange = Math.max(
+      high - low,
+      Math.abs(high - prevClose),
+      Math.abs(low - prevClose)
+    );
+    return { plusDM: plusDM, minusDM: minusDM, trueRange: trueRange };
+  }
+
+  function diAndDx(sp, sm, st) {
+    const plusDI = st === 0 ? 0 : (100 * sp) / st;
+    const minusDI = st === 0 ? 0 : (100 * sm) / st;
+    const sum = plusDI + minusDI;
+    const dx = sum === 0 ? 0 : (100 * Math.abs(plusDI - minusDI)) / sum;
+    return { plusDI: plusDI, minusDI: minusDI, dx: dx };
+  }
+
   function adx(highs, lows, closes, period) {
     period = period || 14;
     const n = closes.length;
@@ -163,15 +184,10 @@
     const trueRange = nulls(n);
 
     for (let i = 1; i < n; i++) {
-      const upMove = highs[i] - highs[i - 1];
-      const downMove = lows[i - 1] - lows[i];
-      plusDM[i] = (upMove > downMove && upMove > 0) ? upMove : 0;
-      minusDM[i] = (downMove > upMove && downMove > 0) ? downMove : 0;
-      trueRange[i] = Math.max(
-        highs[i] - lows[i],
-        Math.abs(highs[i] - closes[i - 1]),
-        Math.abs(lows[i] - closes[i - 1])
-      );
+      const d = computeDx(highs[i], lows[i], closes[i], highs[i - 1], lows[i - 1], closes[i - 1]);
+      plusDM[i] = d.plusDM;
+      minusDM[i] = d.minusDM;
+      trueRange[i] = d.trueRange;
     }
 
     const smoothedPlus = rma(plusDM, period);
@@ -184,10 +200,10 @@
 
     for (let i = 0; i < n; i++) {
       if (smoothedTr[i] == null || smoothedPlus[i] == null || smoothedMinus[i] == null) continue;
-      plusDI[i] = smoothedTr[i] === 0 ? 0 : (100 * smoothedPlus[i]) / smoothedTr[i];
-      minusDI[i] = smoothedTr[i] === 0 ? 0 : (100 * smoothedMinus[i]) / smoothedTr[i];
-      const sum = plusDI[i] + minusDI[i];
-      dx[i] = sum === 0 ? 0 : (100 * Math.abs(plusDI[i] - minusDI[i])) / sum;
+      const r = diAndDx(smoothedPlus[i], smoothedMinus[i], smoothedTr[i]);
+      plusDI[i] = r.plusDI;
+      minusDI[i] = r.minusDI;
+      dx[i] = r.dx;
     }
 
     return {
@@ -195,19 +211,6 @@
       plusDI: plusDI,
       minusDI: minusDI
     };
-  }
-
-  function computeDx(high, low, close, prevHigh, prevLow, prevClose) {
-    const upMove = high - prevHigh;
-    const downMove = prevLow - low;
-    const plusDM = (upMove > downMove && upMove > 0) ? upMove : 0;
-    const minusDM = (downMove > upMove && downMove > 0) ? downMove : 0;
-    const trueRange = Math.max(
-      high - low,
-      Math.abs(high - prevClose),
-      Math.abs(low - prevClose)
-    );
-    return { plusDM, minusDM, trueRange };
   }
 
   function initAdxState(highs, lows, closes, period) {
@@ -228,14 +231,6 @@
     let smoothPlus = sumPlus / period;
     let smoothMinus = sumMinus / period;
     let smoothTr = sumTr / period;
-
-    function diAndDx(sp, sm, st) {
-      const plusDI = st === 0 ? 0 : (100 * sp) / st;
-      const minusDI = st === 0 ? 0 : (100 * sm) / st;
-      const sum = plusDI + minusDI;
-      const dx = sum === 0 ? 0 : (100 * Math.abs(plusDI - minusDI)) / sum;
-      return { plusDI, minusDI, dx };
-    }
 
     let first = diAndDx(smoothPlus, smoothMinus, smoothTr);
     let dxSum = first.dx;
@@ -278,11 +273,8 @@
     const smoothMinus = updateRma(state.smoothMinus, d.minusDM, period);
     const smoothTr = updateRma(state.smoothTr, d.trueRange, period);
 
-    const plusDI = smoothTr === 0 ? 0 : (100 * smoothPlus) / smoothTr;
-    const minusDI = smoothTr === 0 ? 0 : (100 * smoothMinus) / smoothTr;
-    const sum = plusDI + minusDI;
-    const dx = sum === 0 ? 0 : (100 * Math.abs(plusDI - minusDI)) / sum;
-    const adxVal = updateRma(state.adx, dx, period);
+    const r = diAndDx(smoothPlus, smoothMinus, smoothTr);
+    const adxVal = updateRma(state.adx, r.dx, period);
 
     return {
       period: period,
@@ -293,8 +285,8 @@
       smoothMinus: smoothMinus,
       smoothTr: smoothTr,
       adx: adxVal,
-      plusDI: plusDI,
-      minusDI: minusDI
+      plusDI: r.plusDI,
+      minusDI: r.minusDI
     };
   }
 

@@ -1,15 +1,23 @@
 window.AT_CONFIG = {
-  version: '3.1.0',
+  version: '4.0.0',
   base: 'https://biquote.io',
   signalrUrl: 'https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.0/signalr.min.js',
 
+  timings: {
+    updateIntervalMs: 1000,
+    priceCheckMs: 500,
+    cycleBudgetMs: 4500,
+    staleBarsMs: 20000,
+    maxSignalAgeMs: 5000
+  },
+
   symbols: {
-    XAUUSD: { name: 'Oro / Dólar', digits: 2, contract: 100, spread: 0.30, family: 'metals', enabled: true },
-    XAGUSD: { name: 'Plata / Dólar', digits: 3, contract: 5000, spread: 0.03, family: 'metals', enabled: true },
-    XAUEUR: { name: 'Oro / Euro', digits: 2, contract: 100, spread: 0.40, family: 'metals', enabled: true },
-    EURUSD: { name: 'Euro / Dólar', digits: 5, contract: 100000, spread: 0.00010, family: 'forex', enabled: true },
-    BNBUSD: { name: 'BNB / Dólar', digits: 2, contract: 1, spread: 0.30, family: 'crypto', enabled: true },
-    BTCUSD: { name: 'Bitcoin / Dólar', digits: 2, contract: 1, spread: 0.60, family: 'crypto', enabled: true }
+    XAUUSD: { name: 'Oro / Dólar',     digits: 2, contract: 100,    spread: 0.30,    family: 'metals', enabled: true },
+    XAGUSD: { name: 'Plata / Dólar',   digits: 3, contract: 5000,   spread: 0.03,    family: 'metals', enabled: true },
+    XAUEUR: { name: 'Oro / Euro',      digits: 2, contract: 100,    spread: 0.40,    family: 'metals', enabled: true },
+    EURUSD: { name: 'Euro / Dólar',    digits: 5, contract: 100000, spread: 0.00010, family: 'forex',  enabled: true },
+    BNBUSD: { name: 'BNB / Dólar',     digits: 2, contract: 1,      spread: 0.30,    family: 'crypto', enabled: true },
+    BTCUSD: { name: 'Bitcoin / Dólar', digits: 2, contract: 1,      spread: 0.60,    family: 'crypto', enabled: true }
   },
 
   timeframes: {
@@ -103,12 +111,7 @@ window.AT_CONFIG = {
     mediumConfluence: 50,
     minComponentsForMedium: 2,
     minConfidence: 15,
-    riskTiers: {
-      high: 1.0,
-      medium: 0.5,
-      low: 0.25,
-      vetoed: 0.0
-    },
+    riskTiers: { high: 1.0, medium: 0.5, low: 0.25, vetoed: 0.0 },
     blockers: {
       enabled: false,
       strict: false,
@@ -118,18 +121,18 @@ window.AT_CONFIG = {
   },
 
   sessions: {
-    london: { startGmt: 8, endGmt: 16 },
-    newYork: { startGmt: 13, endGmt: 21 },
+    london:   { startGmt: 8,  endGmt: 16 },
+    newYork:  { startGmt: 13, endGmt: 21 },
     combined: { startGmt: 13, endGmt: 16 },
     dstAdjust: false,
     requireActive: false
   },
 
   tradingHours: {
-    forex: { alwaysOpen: false, open: { day: 0, hour: 22 }, close: { day: 5, hour: 22 } },
+    forex:  { alwaysOpen: false, open: { day: 0, hour: 22 }, close: { day: 5, hour: 22 } },
     metals: { alwaysOpen: false, open: { day: 0, hour: 23 }, close: { day: 5, hour: 22 } },
     crypto: { alwaysOpen: true },
-    index: { alwaysOpen: false, open: { day: 0, hour: 22 }, close: { day: 5, hour: 21 } }
+    index:  { alwaysOpen: false, open: { day: 0, hour: 22 }, close: { day: 5, hour: 21 } }
   },
 
   feed: {
@@ -178,7 +181,6 @@ window.AT_CONFIG = {
 
   analysis: {
     minBarsPerTf: 50,
-    throttleMs: 1000,
     useClosedCandlesOnly: true
   }
 };

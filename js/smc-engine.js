@@ -100,6 +100,13 @@ window.AT.smcEngine = (function (I) {
     return v != null && Number.isFinite(v);
   }
 
+  function missingModulesError(missing) {
+    const e = new Error('SMC: módulos no disponibles → ' + missing.join(', '));
+    e.code = 'SMC_MODULES_MISSING';
+    e.missing = missing;
+    return e;
+  }
+
   function checkBlockers(now) {
     const b = blockersCfg();
     if (!b.enabled) return null;
@@ -290,6 +297,18 @@ window.AT.smcEngine = (function (I) {
     return result;
   }
 
+  function finalizeVetoed(result, tierValue) {
+    result.score = 0;
+    result.breakdown = { vetoed: { value: 0, weighted: 0, reason: 'Score vetado' } };
+    result.reasons = result.vetoes.map(function (v) { return '🚫 ' + v; });
+    result.vetoed = true;
+    result.grade = 'Débil';
+    result.label = 'Sin confluencia suficiente';
+    result.trend = 'Débil';
+    result.riskMultiplier = tierValue != null ? tierValue : 0.0;
+    return result;
+  }
+
   function applyRiskAndGrade(result) {
     const th = thresholds();
     const ctx = result.context || {};
@@ -376,18 +395,6 @@ window.AT.smcEngine = (function (I) {
     return result;
   }
 
-  function finalizeVetoed(result, tierValue) {
-    result.score = 0;
-    result.breakdown = { vetoed: { value: 0, weighted: 0, reason: 'Score vetado' } };
-    result.reasons = result.vetoes.map(function (v) { return '🚫 ' + v; });
-    result.vetoed = true;
-    result.grade = 'Débil';
-    result.label = 'Sin confluencia suficiente';
-    result.trend = 'Débil';
-    result.riskMultiplier = tierValue != null ? tierValue : 0.0;
-    return result;
-  }
-
   function evaluate(bars, direction, context) {
     context = context || {};
     direction = direction === 1 || direction === -1 ? direction : 0;
@@ -401,13 +408,19 @@ window.AT.smcEngine = (function (I) {
       return emptyResult(direction, 'Volatilidad (ATR) no disponible.', context);
     }
 
-    const structureModule = window.AT.smc.structure;
-    const liquidity = window.AT.smc.liquidity;
-    const zones = window.AT.smc.zones;
-    const oteModule = window.AT.smc.ote;
+    const missing = [];
+    const structureModule = window.AT.smc && window.AT.smc.structure;
+    const liquidity = window.AT.smc && window.AT.smc.liquidity;
+    const zones = window.AT.smc && window.AT.smc.zones;
+    const oteModule = window.AT.smc && window.AT.smc.ote;
 
-    if (!structureModule || !liquidity || !zones || !oteModule) {
-      return emptyResult(direction, 'Módulos SMC no disponibles.', context);
+    if (!structureModule) missing.push('structure');
+    if (!liquidity) missing.push('liquidity');
+    if (!zones) missing.push('zones');
+    if (!oteModule) missing.push('ote');
+
+    if (missing.length) {
+      throw missingModulesError(missing);
     }
 
     const structure = structureModule.detectStructure(bars, { atrValue: atr });

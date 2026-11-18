@@ -260,8 +260,6 @@
     });
   }
 
-  // El feed no entrega volumen real por tick; se usa 1 por defecto para aproximar
-  // el volumen como número de ticks en la vela en vivo.
   function applyTick(bars, tfMs, price, ts, volume) {
     if (!bars || !bars.length) return null;
     if (!Number.isFinite(price) || price <= 0) return null;
@@ -269,11 +267,13 @@
     const last = bars[bars.length - 1];
     const vol = Number.isFinite(volume) && volume >= 0 ? volume : 1;
 
-    if (ts >= last.t + tfMs) {
+    const currentBucket = Math.floor(ts / tfMs) * tfMs;
+    const lastBucket = Math.floor(last.t / tfMs) * tfMs;
+
+    if (currentBucket > lastBucket) {
       last.live = false;
-      const newBarT = Math.floor(ts / tfMs) * tfMs;
       bars.push({
-        t: newBarT,
+        t: currentBucket,
         o: price,
         h: price,
         l: price,
@@ -281,7 +281,7 @@
         v: vol,
         live: true
       });
-      return newBarT > last.t + tfMs ? 'gap' : 'new';
+      return (currentBucket - lastBucket) > tfMs ? 'gap' : 'new';
     }
 
     if (ts < last.t) return null;

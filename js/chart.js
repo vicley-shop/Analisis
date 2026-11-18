@@ -86,6 +86,14 @@
       return STORAGE_PREFIX + scope + ':' + (st.tf || '1h');
     }
 
+    function isValidDrawing(d) {
+      if (!d || typeof d !== 'object') return false;
+      if (!d.p1 || typeof d.p1.t !== 'number' || typeof d.p1.price !== 'number') return false;
+      if (d.p2 && (typeof d.p2.t !== 'number' || typeof d.p2.price !== 'number')) return false;
+      if (d.type !== 'line' && d.type !== 'h' && d.type !== 'v' && d.type !== 'rect' && d.type !== 'fib') return false;
+      return true;
+    }
+
     function loadDrawings() {
       try {
         const raw = window.localStorage.getItem(scopeKey());
@@ -95,14 +103,6 @@
       } catch (e) {
         st.drawings = [];
       }
-    }
-
-    function isValidDrawing(d) {
-      if (!d || typeof d !== 'object') return false;
-      if (!d.p1 || typeof d.p1.t !== 'number' || typeof d.p1.price !== 'number') return false;
-      if (d.p2 && (typeof d.p2.t !== 'number' || typeof d.p2.price !== 'number')) return false;
-      if (d.type !== 'line' && d.type !== 'h' && d.type !== 'v' && d.type !== 'rect' && d.type !== 'fib') return false;
-      return true;
     }
 
     function saveDrawings() {

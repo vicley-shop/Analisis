@@ -87,14 +87,9 @@
     return SESSION_LABELS.asian;
   }
 
-  // ✅ FIX #2: recibe tf para poder loguear el motivo real del descarte.
-  function analyzeTimeframe(bars, tf) {
+  function analyzeTimeframe(bars) {
     const minBars = (cfg().analysis && cfg().analysis.minBarsPerTf) || 50;
-    if (!bars || bars.length < minBars) {
-      console.warn('[analysis] ' + (tf || '?') + ': descartado — ' +
-        ((bars && bars.length) || 0) + ' barras < ' + minBars + ' requeridas.');
-      return null;
-    }
+    if (!bars || bars.length < minBars) return null;
 
     const closes = bars.map(function (b) { return b.c; });
     const highs = bars.map(function (b) { return b.h; });
@@ -120,12 +115,7 @@
     const s = slow[i];
     const adxVal = adxData.adx[i];
 
-    if (!num(f) || !num(s) || !num(adxVal) || s === 0) {
-      console.warn('[analysis] ' + (tf || '?') + ': indicadores incompletos — ' +
-        'EMA' + emaFastP + '=' + f + ', EMA' + emaSlowP + '=' + s + ', ADX=' + adxVal +
-        ' (barras=' + bars.length + '). ¿Historial insuficiente para EMA' + emaSlowP + '?');
-      return null;
-    }
+    if (!num(f) || !num(s) || !num(adxVal) || s === 0) return null;
 
     const direction = f > s ? 1 : -1;
     const emaSepPct = Math.abs((f - s) / s) * 100;
@@ -156,7 +146,6 @@
     };
   }
 
-  // ✅ FIX #1: NO cachear null. Si el análisis falla, se reintenta al siguiente tick.
   function getAnalyzedTf(rawBars, tf) {
     if (!rawBars || !rawBars.length) return null;
     const cleaned = cleanBars(rawBars);
@@ -167,7 +156,7 @@
     const cached = _cache.get(tf);
 
     if (cached &&
-        cached.result != null &&        // ← clave: no devolver caché si guarda null
+        cached.result != null &&
         cached.rawBarsRef === rawBars &&
         cached.cleanLen === cleanLen &&
         cached.lastT === last.t &&
@@ -175,7 +164,7 @@
       return cached.result;
     }
 
-    const result = analyzeTimeframe(cleaned, tf);
+    const result = analyzeTimeframe(cleaned);
     if (result != null) {
       _cache.set(tf, {
         rawBarsRef: rawBars,
@@ -185,8 +174,6 @@
         result: result
       });
     } else {
-      // No cachear null: borrar entrada previa (posiblemente obsoleta) para
-      // garantizar que el próximo tick vuelva a intentarlo.
       _cache.delete(tf);
     }
     return result;
@@ -466,7 +453,6 @@
     };
   }
 
-  // ✅ FIX #3 (defensivo): el análisis agregado nunca debe "matar" la UI.
   function analyze(barsByTf, opts) {
     try {
       return _analyze(barsByTf, opts);
@@ -475,9 +461,6 @@
       return emptyResult('Error interno de análisis: ' + (e && e.message ? e.message : 'desconocido'));
     }
   }
-
-  // ✅ FIX #2 (cont.) + FIX #3 (per-TF): logging de TFs y aislamiento por TF.
-  let _lastTfSummary = '';
 
   function _analyze(barsByTf, opts) {
     opts = opts || {};
@@ -516,23 +499,7 @@
         perTf[tf] = r;
         valid.push({ tf: tf, data: r });
       } catch (e) {
-        // ✅ FIX #3: un TF con excepción no debe bloquear los demás.
         console.error('[analysis] ' + tf + ' excepción durante el análisis:', e);
-      }
-    }
-
-    // ✅ FIX #2: log de cuántos TFs son válidos (solo al cambiar el resumen, para no spamear).
-    const summaryKey = keys.join(',') + '|' + valid.map(function (v) { return v.tf; }).join(',');
-    if (summaryKey !== _lastTfSummary) {
-      _lastTfSummary = summaryKey;
-      if (valid.length < keys.length) {
-        const missing = keys.filter(function (k) { return valid.every(function (v) { return v.tf !== k; }); });
-        console.warn('[analysis] TFs válidos: ' + valid.length + '/' + keys.length +
-          ' → [' + valid.map(function (v) { return v.tf; }).join(', ') + ']' +
-          ' · faltan: [' + missing.join(', ') + ']');
-      } else {
-        console.info('[analysis] TFs válidos: ' + valid.length + '/' + keys.length +
-          ' → [' + valid.map(function (v) { return v.tf; }).join(', ') + ']');
       }
     }
 

@@ -6,6 +6,11 @@
   const A = AT.analysis;
   const SMC = AT.smcEngine;
   const CFG = window.AT_CONFIG;
+  const TIM = (CFG && CFG.timings) || {};
+
+  const UPDATE_INTERVAL_MS = TIM.updateIntervalMs || 1000;
+  const PRICE_CHECK_MS = TIM.priceCheckMs || 500;
+  const MAX_SIGNAL_LOG = 500;
 
   const state = {
     symbol: 'XAUUSD',
@@ -17,27 +22,28 @@
     feedMode: 'off',
     loading: false,
     requestId: 0,
-    renderTimer: null,
-    analysisTimer: null,
-    lastAnalysisAt: 0,
     signalLog: [],
     lastVerdictState: 'wait',
+    lastSignalEmit: 0,
     drawMenuOpen: false,
-    tickBuffer: new Map(),
-    rafId: 0,
-    gapRefill: {}
+    gapRefill: {},
+    lastRenderHash: '',
+    lastAnalysisAt: 0,
+    lastPriceCheckAt: 0,
+    cycleSkipCount: 0,
+    cycleErrorCount: 0
+  };
+
+  const loop = {
+    masterId: 0,
+    priceId: 0,
+    locked: false,
+    stopped: false
   };
 
   let chart = null;
   let feed = null;
   let fsAbort = null;
-
-  const MAX_SIGNAL_LOG = 500;
-
-  // ... [resto de helpers sin cambios: $, esc, fmt, sgn, needleAngle, currentTool,
-  //     flushTicks, refillGap, processTick, renderStatus, renderPrice, renderGauge,
-  //     renderVerdict, renderSMC, renderAlerts, renderMetrics, renderMtf, renderConclusion,
-  //     renderChart, renderAll, currentEntryPrice, logSignalIfChanged] ...
 
   function $ (id) { return document.getElementById(id); }
 
@@ -68,71 +74,6 @@
     return chart && typeof chart.getTool === 'function' ? chart.getTool() : 'cursor';
   }
 
-  function flushTicks() {
-    if (state.rafId) return;
-    state.rafId = requestAnimationFrame(function () {
-      state.rafId = 0;
-      const buffer = state.tickBuffer;
-      state.tickBuffer = new Map();
-      buffer.forEach(function (tick) { processTick(tick); });
-    });
-  }
-
-  function refillGap(tf) {
-    if (state.gapRefill[tf]) return;
-    state.gapRefill[tf] = true;
-
-    const myId = state.requestId;
-    D.fetchBars(state.symbol, tf, 1000).then(function (bars) {
-      if (state.requestId !== myId) return;
-      if (bars && bars.length) {
-        state.bars[tf] = bars;
-        if (chart && state.tf === tf) {
-          const inst = CFG.symbols[state.symbol];
-          if (inst) chart.setData(bars, { tf: state.tf, digits: inst.digits, symbol: state.symbol });
-        }
-        scheduleAnalysis(true);
-      }
-    }).catch(function () { void 0; }).then(function () {
-      delete state.gapRefill[tf];
-    });
-  }
-
-  function processTick(tick) {
-    if (!tick || !tick.symbol) return;
-    state.ticks[tick.symbol] = tick;
-
-    if (tick.symbol !== state.symbol) {
-      updateSymbolBarPrices();
-      return;
-    }
-
-    if (tick.stale) return;
-
-    let newBar = false;
-    const tfMs = D.TF;
-    Object.keys(state.bars).forEach(function (tf) {
-      const ms = tfMs[tf];
-      if (ms && state.bars[tf] && state.bars[tf].length) {
-        const result = D.applyTick(state.bars[tf], ms, tick.mid, tick.ts);
-        if (result === 'new') newBar = true;
-        if (result === 'gap') { newBar = true; refillGap(tf); }
-      }
-    });
-
-    if (chart) {
-      const bars = state.bars[state.tf];
-      const inst = CFG.symbols[state.symbol];
-      if (bars && bars.length && inst) {
-        chart.setData(bars, { tf: state.tf, digits: inst.digits, symbol: state.symbol });
-      }
-    }
-
-    updateSymbolBarPrices();
-    renderPrice();
-    scheduleAnalysis(newBar);
-  }
-
   function renderStatus() {
     const dot = $('statusDot');
     const txt = $('statusText');
@@ -154,29 +95,37 @@
     const bars = state.bars[state.tf] || [];
     const price = t ? t.mid : (bars.length ? bars[bars.length - 1].c : null);
 
-    $('priceBig').textContent = fmt(state.symbol, price);
+    const el = $('priceBig');
+    if (el) el.textContent = fmt(state.symbol, price);
 
     const chg = $('priceChg');
-    if (t && t.dayPct != null && t.state !== 'closed') {
-      chg.textContent = sgn(t.dayPct, 2) + '% hoy';
-      chg.className = 'price-chg ' + (t.dayPct >= 0 ? 'up' : 'down');
-    } else {
-      chg.textContent = '';
+    if (chg) {
+      if (t && t.dayPct != null && t.state !== 'closed') {
+        chg.textContent = sgn(t.dayPct, 2) + '% hoy';
+        chg.className = 'price-chg ' + (t.dayPct >= 0 ? 'up' : 'down');
+      } else {
+        chg.textContent = '';
+      }
     }
 
-    $('priceSub').textContent = t
-      ? 'Bid ' + fmt(state.symbol, t.bid) + ' · Ask ' + fmt(state.symbol, t.ask) + ' · Spread ' + fmt(state.symbol, t.spread)
-      : 'Esperando precio…';
+    const sub = $('priceSub');
+    if (sub) {
+      sub.textContent = t
+        ? 'Bid ' + fmt(state.symbol, t.bid) + ' · Ask ' + fmt(state.symbol, t.ask) + ' · Spread ' + fmt(state.symbol, t.spread)
+        : 'Esperando precio…';
+    }
 
     const sb = $('sessionBadge');
-    const a = state.analysis;
-    const open = a ? a.marketOpen : false;
-    const label = a ? a.sessionLabel : '—';
-    sb.textContent = label;
-    sb.className = 'session-badge ' + (open ? 'ok' : 'bad');
-    sb.title = open
-      ? (a && a.highLiquidity ? 'Mercado abierto, liquidez alta' : 'Mercado abierto, liquidez normal')
-      : 'Mercado cerrado';
+    if (sb) {
+      const a = state.analysis;
+      const open = a ? a.marketOpen : false;
+      const label = a ? a.sessionLabel : '—';
+      sb.textContent = label;
+      sb.className = 'session-badge ' + (open ? 'ok' : 'bad');
+      sb.title = open
+        ? (a && a.highLiquidity ? 'Mercado abierto, liquidez alta' : 'Mercado abierto, liquidez normal')
+        : 'Mercado cerrado';
+    }
   }
 
   function renderGauge() {
@@ -184,6 +133,7 @@
     const needle = $('needle');
     const label = $('gaugeLabel');
     const score = $('gaugeScore');
+    if (!needle || !label || !score) return;
 
     if (!a) {
       needle.style.opacity = '0.3';
@@ -209,6 +159,7 @@
     const a = state.analysis;
     const badge = $('verdictBadge');
     const reason = $('verdictReason');
+    if (!badge || !reason) return;
 
     if (!a) {
       badge.innerHTML = '<span class="verdict-icon" aria-hidden="true">◷</span><span class="verdict-text">ESPERAR</span>';
@@ -235,6 +186,7 @@
     const scoreEl = $('smcScore');
     const barEl = $('smcBarFill');
     const reasonsEl = $('smcReasons');
+    if (!scoreEl || !barEl || !reasonsEl) return;
 
     if (!smc) {
       scoreEl.textContent = '0%';
@@ -301,6 +253,7 @@
     const a = state.analysis;
     const card = $('alertCard');
     const list = $('alertList');
+    if (!card || !list) return;
 
     if (!a) { card.hidden = true; list.innerHTML = ''; return; }
 
@@ -318,32 +271,40 @@
     if (!a) return;
 
     const tEl = $('macroTrend');
-    let trendTxt = a.macroTrend || '—';
-    if (Number.isFinite(a.avgAdxAligned) && a.avgAdxAligned > 0) {
-      trendTxt += ' (' + a.avgAdxAligned.toFixed(1) + ')';
+    if (tEl) {
+      let trendTxt = a.macroTrend || '—';
+      if (Number.isFinite(a.avgAdxAligned) && a.avgAdxAligned > 0) {
+        trendTxt += ' (' + a.avgAdxAligned.toFixed(1) + ')';
+      }
+      tEl.textContent = trendTxt;
     }
-    tEl.textContent = trendTxt;
 
-    $('macroMomentum').textContent = a.macroMomentum || '—';
-    $('macroVolatility').textContent = a.macroVolatility || '—';
+    const mEl = $('macroMomentum');
+    if (mEl) mEl.textContent = a.macroMomentum || '—';
+
+    const vEl = $('macroVolatility');
+    if (vEl) vEl.textContent = a.macroVolatility || '—';
 
     const sEl = $('macroStructure');
-    let structTxt = 'Lateral';
-    let structCls = 'metric-val';
-    if (a.consensusLabel !== 'neutral' && a.overallDirection !== 0) {
-      structTxt = a.overallDirection === 1 ? 'Alcista' : 'Bajista';
-      structCls += ' ' + (a.overallDirection === 1 ? 'up' : 'down');
-      if (Number.isFinite(a.avgAdxOpposed) && a.avgAdxOpposed > 0) {
-        structTxt += ' · contra ' + a.avgAdxOpposed.toFixed(1);
+    if (sEl) {
+      let structTxt = 'Lateral';
+      let structCls = 'metric-val';
+      if (a.consensusLabel !== 'neutral' && a.overallDirection !== 0) {
+        structTxt = a.overallDirection === 1 ? 'Alcista' : 'Bajista';
+        structCls += ' ' + (a.overallDirection === 1 ? 'up' : 'down');
+        if (Number.isFinite(a.avgAdxOpposed) && a.avgAdxOpposed > 0) {
+          structTxt += ' · contra ' + a.avgAdxOpposed.toFixed(1);
+        }
       }
+      sEl.textContent = structTxt;
+      sEl.className = structCls;
     }
-    sEl.textContent = structTxt;
-    sEl.className = structCls;
   }
 
   function renderMtf() {
     const a = state.analysis;
     const box = $('mtf');
+    if (!box) return;
     const allTfs = CFG.timeframes.list || ['15m', '1h', '4h', '1d'];
     const optional = CFG.timeframes.optional || [];
 
@@ -394,6 +355,7 @@
   function renderConclusion() {
     const a = state.analysis;
     const el = $('conclusionText');
+    if (!el) return;
     if (!a) {
       el.textContent = 'Esperando datos suficientes para generar un veredicto...';
       return;
@@ -413,7 +375,31 @@
     chart.setZones(hasZones ? z : null);
   }
 
-  function renderAll() {
+  function computeRenderHash() {
+    const a = state.analysis;
+    if (!a) return 'none';
+    return [
+      state.symbol,
+      state.tf,
+      a.verdictState,
+      a.consensusLabel,
+      Math.round(a.consensusScore || 0),
+      Math.round(a.confidence || 0),
+      state.smcResult ? Math.round(state.smcResult.score || 0) : 0,
+      state.smcResult ? state.smcResult.grade || '' : '',
+      (a.alerts || []).length,
+      state.feedMode
+    ].join('|');
+  }
+
+  function renderAll(force) {
+    const hash = computeRenderHash();
+    if (!force && hash === state.lastRenderHash) {
+      renderPrice();
+      return;
+    }
+    state.lastRenderHash = hash;
+
     renderStatus();
     renderPrice();
     renderGauge();
@@ -438,12 +424,18 @@
     if (!analysis) return;
     const prev = state.lastVerdictState;
     const curr = analysis.verdictState;
+    const now = Date.now();
+    const maxAge = TIM.maxSignalAgeMs || 5000;
 
     if (curr !== prev && (curr === 'buy' || curr === 'sell') && analysis.verdictRisk) {
+      if (now - state.lastSignalEmit < maxAge) {
+        state.lastVerdictState = curr;
+        return;
+      }
       const entryPrice = currentEntryPrice();
       if (entryPrice != null) {
         state.signalLog.push({
-          ts: Date.now(),
+          ts: now,
           symbol: state.symbol,
           tf: analysis.entryTf,
           direction: analysis.overallDirection,
@@ -455,104 +447,179 @@
           confidence: analysis.confidence
         });
         if (state.signalLog.length > MAX_SIGNAL_LOG) state.signalLog.shift();
+        state.lastSignalEmit = now;
       }
     }
     state.lastVerdictState = curr;
   }
 
-  // ✅ FIX #3 + #4: runAnalysis SIEMPRE renderiza, aunque A.analyze o SMC.evaluate fallen.
-  function runAnalysis() {
-    state.lastAnalysisAt = Date.now();
+  function updateBarsFromTick(tick) {
+    const tfMs = D.TF;
+    let newBar = false;
+    const tfs = Object.keys(state.bars);
+    for (let i = 0; i < tfs.length; i++) {
+      const tf = tfs[i];
+      const ms = tfMs[tf];
+      if (ms && state.bars[tf] && state.bars[tf].length) {
+        const result = D.applyTick(state.bars[tf], ms, tick.mid, tick.ts);
+        if (result === 'new') newBar = true;
+        if (result === 'gap') { newBar = true; refillGap(tf); }
+      }
+    }
+    return newBar;
+  }
 
+  function refillGap(tf) {
+    if (state.gapRefill[tf]) return;
+    state.gapRefill[tf] = true;
+
+    const myId = state.requestId;
+    D.fetchBars(state.symbol, tf, 1000).then(function (bars) {
+      if (state.requestId !== myId) return;
+      if (bars && bars.length) {
+        state.bars[tf] = bars;
+        if (chart && state.tf === tf) {
+          const inst = CFG.symbols[state.symbol];
+          if (inst) chart.setData(bars, { tf: state.tf, digits: inst.digits, symbol: state.symbol });
+        }
+      }
+    }).catch(function () { void 0; }).then(function () {
+      delete state.gapRefill[tf];
+    });
+  }
+
+  function processTick(tick) {
+    if (!tick || !tick.symbol) return;
+    state.ticks[tick.symbol] = tick;
+
+    if (tick.symbol !== state.symbol) {
+      updateSymbolBarPrices();
+      return;
+    }
+
+    if (tick.stale) return;
+
+    updateBarsFromTick(tick);
+    updateSymbolBarPrices();
+    renderPrice();
+  }
+
+  function onTick(tick) {
+    if (!tick || !tick.symbol) return;
+    processTick(tick);
+  }
+
+  function runAnalysisStep() {
     let res = null;
     try {
       res = A.analyze(state.bars, { currentTf: state.tf, symbol: state.symbol });
     } catch (e) {
-      console.error('[app] A.analyze lanzó excepción:', e);
+      console.error('[app] A.analyze excepción:', e);
+      state.cycleErrorCount++;
     }
     state.analysis = res;
 
-    if (res) {
-      try {
-        const entryTf = res.entryTf || state.tf;
-        const entryBarsRaw = state.bars[entryTf];
-
-        if (entryBarsRaw && entryBarsRaw.length > 50) {
-          const analysisCfg = CFG.analysis || {};
-          const useClosed = analysisCfg.useClosedCandlesOnly !== false;
-          const closedBars = (useClosed && entryBarsRaw.length > 1)
-            ? entryBarsRaw.slice(0, -1)
-            : entryBarsRaw;
-
-          const smcCtx = {
-            confidence: res.confidence,
-            marketOpen: res.marketOpen,
-            sessionActive: res.highLiquidity,
-            entryTf: entryTf,
-            htfDirection: res.overallDirection
-          };
-          state.smcResult = SMC.evaluate(closedBars, res.overallDirection, smcCtx);
-        } else {
-          state.smcResult = {
-            score: 0,
-            label: 'Sin datos',
-            reasons: ['Esperando velas históricas…'],
-            vetoes: ['Historial insuficiente'],
-            breakdown: {},
-            zones: { ob: null, fvg: null, ote: null, allOBs: [], allFVGs: [] },
-            direction: 0,
-            trend: 'Débil',
-            vetoed: true,
-            grade: 'Débil',
-            riskMultiplier: 0.0,
-            blockerInfo: null,
-            activeComponents: 0
-          };
-        }
-      } catch (e) {
-        console.error('[app] SMC.evaluate lanzó excepción:', e);
-        state.smcResult = null;
-      }
-
-      // ✅ FIX #4: verificación explícita de cuántos TFs cargaron realmente.
-      const allTfs = CFG.timeframes.list || [];
-      const loadedTfs = allTfs.filter(function (tf) {
-        return state.bars[tf] && state.bars[tf].length;
-      });
-      if (loadedTfs.length < allTfs.length) {
-        console.warn('[app] runAnalysis: ' + loadedTfs.length + '/' + allTfs.length +
-          ' TFs con barras (' + loadedTfs.join(', ') + '). Faltan: ' +
-          allTfs.filter(function (tf) { return loadedTfs.indexOf(tf) === -1; }).join(', ') + '.');
-      }
-
-      logSignalIfChanged(res);
-    } else {
+    if (!res) {
       state.smcResult = null;
+      return;
     }
 
-    // renderAll SIEMPRE se ejecuta, incluso si algo falló arriba.
     try {
-      renderAll();
+      const entryTf = res.entryTf || state.tf;
+      const entryBarsRaw = state.bars[entryTf];
+
+      if (entryBarsRaw && entryBarsRaw.length > 50) {
+        const analysisCfg = CFG.analysis || {};
+        const useClosed = analysisCfg.useClosedCandlesOnly !== false;
+        const closedBars = (useClosed && entryBarsRaw.length > 1)
+          ? entryBarsRaw.slice(0, -1)
+          : entryBarsRaw;
+
+        const smcCtx = {
+          confidence: res.confidence,
+          marketOpen: res.marketOpen,
+          sessionActive: res.highLiquidity,
+          entryTf: entryTf,
+          htfDirection: res.overallDirection
+        };
+        state.smcResult = SMC.evaluate(closedBars, res.overallDirection, smcCtx);
+      } else {
+        state.smcResult = {
+          score: 0,
+          label: 'Sin datos',
+          reasons: ['Esperando velas históricas…'],
+          vetoes: ['Historial insuficiente'],
+          breakdown: {},
+          zones: { ob: null, fvg: null, ote: null, allOBs: [], allFVGs: [] },
+          direction: 0,
+          trend: 'Débil',
+          vetoed: true,
+          grade: 'Débil',
+          riskMultiplier: 0.0,
+          blockerInfo: null,
+          activeComponents: 0
+        };
+      }
     } catch (e) {
-      console.error('[app] renderAll lanzó excepción (UI puede quedar desincronizada):', e);
+      console.error('[app] SMC.evaluate excepción:', e);
+      state.smcResult = null;
+      state.cycleErrorCount++;
+    }
+
+    logSignalIfChanged(res);
+  }
+
+  function masterCycle() {
+    if (loop.locked || loop.stopped) {
+      if (loop.locked) state.cycleSkipCount++;
+      return;
+    }
+    loop.locked = true;
+    const t0 = Date.now();
+
+    try {
+      runAnalysisStep();
+    } catch (e) {
+      console.error('[app] masterCycle excepción en análisis:', e);
+    }
+
+    try {
+      renderAll(false);
+    } catch (e) {
+      console.error('[app] masterCycle excepción en render:', e);
+    }
+
+    state.lastAnalysisAt = Date.now();
+    const elapsed = state.lastAnalysisAt - t0;
+    const budget = TIM.cycleBudgetMs || 4500;
+    if (elapsed > budget) {
+      console.warn('[app] ciclo excedió presupuesto: ' + elapsed + 'ms > ' + budget + 'ms');
+    }
+
+    loop.locked = false;
+  }
+
+  function priceCheckCycle() {
+    if (loop.stopped) return;
+    state.lastPriceCheckAt = Date.now();
+    try {
+      renderPrice();
+    } catch (e) {
+      console.error('[app] priceCheckCycle excepción:', e);
     }
   }
 
-  function scheduleAnalysis(force) {
-    const throttleMs = (CFG.analysis && CFG.analysis.throttleMs) || 1000;
-    const elapsed = Date.now() - state.lastAnalysisAt;
+  function startMasterLoop() {
+    if (loop.masterId) return;
+    loop.stopped = false;
+    loop.masterId = setInterval(masterCycle, UPDATE_INTERVAL_MS);
+    loop.priceId = setInterval(priceCheckCycle, PRICE_CHECK_MS);
+  }
 
-    if (force) {
-      if (state.analysisTimer) { clearTimeout(state.analysisTimer); state.analysisTimer = null; }
-      runAnalysis();
-      return;
-    }
-    if (state.analysisTimer) return;
-    if (elapsed >= throttleMs) { runAnalysis(); return; }
-    state.analysisTimer = setTimeout(function () {
-      state.analysisTimer = null;
-      runAnalysis();
-    }, throttleMs - elapsed);
+  function stopMasterLoop() {
+    loop.stopped = true;
+    if (loop.masterId) { clearInterval(loop.masterId); loop.masterId = 0; }
+    if (loop.priceId) { clearInterval(loop.priceId); loop.priceId = 0; }
   }
 
   function loadAllBars() {
@@ -565,7 +632,7 @@
       return function (signal) { return D.fetchBars(state.symbol, tf, 1000, signal); };
     });
 
-    return D.pool(tasks, 3, 20000).then(function (results) {
+    return D.pool(tasks, 3, CFG.feed.globalTimeout || 20000).then(function (results) {
       if (state.requestId !== myId) return null;
       state.bars = {};
       results.forEach(function (r, i) {
@@ -576,7 +643,8 @@
       const loaded = tfs.filter(function (tf) { return state.bars[tf] && state.bars[tf].length; });
       console.info('[app] loadAllBars: ' + loaded.length + '/' + tfs.length + ' TFs cargados → [' + loaded.join(', ') + ']');
 
-      runAnalysis();
+      runAnalysisStep();
+      renderAll(true);
       return results;
     }).catch(function (err) {
       if (state.requestId !== myId) return null;
@@ -587,11 +655,12 @@
         partial.forEach(function (r, i) {
           if (r && r.ok) state.bars[tfs[i]] = r.v;
         });
-        runAnalysis();
+        runAnalysisStep();
+        renderAll(true);
         return partial;
       }
       console.error('[app] loadAllBars:', err && (err.message || err));
-      renderAll();
+      renderAll(true);
       return null;
     });
   }
@@ -604,25 +673,31 @@
     state.analysis = null;
     state.smcResult = null;
     state.lastVerdictState = 'wait';
+    state.lastSignalEmit = 0;
     state.gapRefill = {};
+    state.lastRenderHash = '';
     delete state.ticks[old];
 
-    Array.prototype.forEach.call($('symbolBar').children, function (b) {
-      if (b.dataset.sym === sym) {
-        b.classList.add('active');
-        b.setAttribute('aria-pressed', 'true');
-      } else {
-        b.classList.remove('active');
-        b.setAttribute('aria-pressed', 'false');
-      }
-    });
+    const bar = $('symbolBar');
+    if (bar) {
+      Array.prototype.forEach.call(bar.children, function (b) {
+        if (b.dataset.sym === sym) {
+          b.classList.add('active');
+          b.setAttribute('aria-pressed', 'true');
+        } else {
+          b.classList.remove('active');
+          b.setAttribute('aria-pressed', 'false');
+        }
+      });
+    }
 
-    renderAll();
+    renderAll(true);
     loadAllBars();
   }
 
   function buildSymbolBar() {
     const bar = $('symbolBar');
+    if (!bar) return;
     bar.innerHTML = '';
     Object.keys(CFG.symbols).forEach(function (sym) {
       const def = CFG.symbols[sym];
@@ -641,12 +716,14 @@
   }
 
   function updateSymbolBarPrices() {
-    Array.prototype.forEach.call($('symbolBar').children, function (b) {
+    const bar = $('symbolBar');
+    if (!bar) return;
+    Array.prototype.forEach.call(bar.children, function (b) {
       const sym = b.dataset.sym;
       const t = state.ticks[sym];
       const p = b.querySelector('.sym-price');
       const c = b.querySelector('.sym-chg');
-      if (!t) return;
+      if (!t || !p || !c) return;
       p.textContent = fmt(sym, t.mid);
       if (t.dayPct != null && t.state !== 'closed') {
         c.textContent = sgn(t.dayPct, 2) + '%';
@@ -658,12 +735,6 @@
     });
   }
 
-  function onTick(tick) {
-    if (!tick || !tick.symbol) return;
-    state.tickBuffer.set(tick.symbol, tick);
-    flushTicks();
-  }
-
   function initChart() {
     const canvas = $('chart');
     if (!canvas) return;
@@ -671,6 +742,7 @@
     chart = AT.chart.create(canvas, {
       onHover: function (bar) {
         const el = $('legend');
+        if (!el) return;
         if (!bar) { el.innerHTML = '&nbsp;'; return; }
         const f = function (p) { return fmt(state.symbol, p); };
         const chg = bar.o ? (bar.c - bar.o) / bar.o * 100 : 0;
@@ -679,20 +751,27 @@
       }
     });
 
-    $('zoomIn').addEventListener('click', function () { chart.zoom(0.8); });
-    $('zoomOut').addEventListener('click', function () { chart.zoom(1.25); });
-    $('zoomReset').addEventListener('click', function () { chart.reset(); });
+    const zoomIn = $('zoomIn');
+    const zoomOut = $('zoomOut');
+    const zoomReset = $('zoomReset');
+    const fsBtn = $('chartFullscreen');
 
-    $('chartFullscreen').addEventListener('click', function () {
-      const chartCard = $('chartCard');
-      if (!document.fullscreenElement) {
-        if (chartCard.requestFullscreen) {
-          chartCard.requestFullscreen().catch(function (err) { console.log('Fullscreen:', err.message); });
+    if (zoomIn) zoomIn.addEventListener('click', function () { chart.zoom(0.8); });
+    if (zoomOut) zoomOut.addEventListener('click', function () { chart.zoom(1.25); });
+    if (zoomReset) zoomReset.addEventListener('click', function () { chart.reset(); });
+
+    if (fsBtn) {
+      fsBtn.addEventListener('click', function () {
+        const chartCard = $('chartCard');
+        if (!document.fullscreenElement) {
+          if (chartCard.requestFullscreen) {
+            chartCard.requestFullscreen().catch(function (err) { console.log('Fullscreen:', err.message); });
+          }
+        } else {
+          document.exitFullscreen();
         }
-      } else {
-        document.exitFullscreen();
-      }
-    });
+      });
+    }
 
     fsAbort = new AbortController();
     const fsOpts = { signal: fsAbort.signal };
@@ -709,14 +788,17 @@
     initDrawingMenu();
     initDrawingShortcuts();
 
-    $('mtf').addEventListener('click', function (e) {
-      const b = e.target.closest('button[data-tf]');
-      if (!b) return;
-      state.tf = b.dataset.tf;
-      renderMtf();
-      renderChart();
-      scheduleAnalysis(true);
-    });
+    const mtf = $('mtf');
+    if (mtf) {
+      mtf.addEventListener('click', function (e) {
+        const b = e.target.closest('button[data-tf]');
+        if (!b) return;
+        state.tf = b.dataset.tf;
+        renderMtf();
+        renderChart();
+        masterCycle();
+      });
+    }
   }
 
   function isFullscreen() {
@@ -924,7 +1006,6 @@
     };
   }
 
-  // ✅ FIX #5: initChart y startFeed aislados con try/catch.
   function init() {
     buildSymbolBar();
     initMtfToggle();
@@ -932,37 +1013,37 @@
     try {
       initChart();
     } catch (e) {
-      console.error('[app] initChart falló — el chart no funcionará:', e);
+      console.error('[app] initChart falló:', e);
     }
 
     try {
       startFeed();
     } catch (e) {
-      console.error('[app] startFeed falló — no habrá datos en vivo:', e);
+      console.error('[app] startFeed falló:', e);
       state.feedMode = 'error';
       renderStatus();
     }
+
+    startMasterLoop();
 
     loadAllBars().then(function (results) {
       if (!results) return;
       D.fetchLatest(Object.keys(CFG.symbols)).then(function (ticks) {
         ticks.forEach(function (t) { state.ticks[t.symbol] = t; });
         updateSymbolBarPrices();
-        renderAll();
+        renderAll(true);
       }).catch(function (e) {
         console.error('[app] fetchLatest falló:', e);
-        renderAll();
+        renderAll(true);
       });
     }).catch(function (e) {
       console.error('[app] loadAllBars rechazó en init:', e);
-      renderAll();
+      renderAll(true);
     });
   }
 
   function cleanup() {
-    if (state.rafId) { cancelAnimationFrame(state.rafId); state.rafId = 0; }
-    if (state.renderTimer) { clearTimeout(state.renderTimer); state.renderTimer = null; }
-    if (state.analysisTimer) { clearTimeout(state.analysisTimer); state.analysisTimer = null; }
+    stopMasterLoop();
     if (fsAbort) { fsAbort.abort(); fsAbort = null; }
     if (chart) { if (typeof chart.destroy === 'function') chart.destroy(); chart = null; }
     if (feed) { feed.stop(); feed = null; }
@@ -979,6 +1060,16 @@
   AT.app = {
     getSignalLog: function () { return state.signalLog.slice(); },
     getState: function () { return state; },
-    auditSignals: auditSignals
+    auditSignals: auditSignals,
+    getLoopStats: function () {
+      return {
+        updateIntervalMs: UPDATE_INTERVAL_MS,
+        priceCheckMs: PRICE_CHECK_MS,
+        skips: state.cycleSkipCount,
+        errors: state.cycleErrorCount,
+        lastAnalysisAt: state.lastAnalysisAt,
+        lastPriceCheckAt: state.lastPriceCheckAt
+      };
+    }
   };
 })();
